@@ -77,12 +77,20 @@
       "unknown": "未知错误。请查看 Home Assistant 日志。"
     },
     "abort": {
+      "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "该节点已经配置过。",
       "no_data": "未收到集群数据。请检查配置。",
       "cluster_no_options": "集群设置由 PVE 节点配置统一管理。"
     }
   },
   "options": {
+    "error": {
+      "guest_discovery_unavailable": "Guest discovery is unavailable. Guest selections will be preserved.",
+      "guest_selection_changed": "Guest selections changed in another Options flow. Reopen Options and try again.",
+      "guest_inventory_changed": "The guest inventory changed. Reopen Options and try again.",
+      "invalid_guest_selection": "Only guests shown for this node can be selected.",
+      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs."
+    },
     "abort": {
       "pbs_no_options": "该 PBS 服务器没有可配置选项。",
       "cluster_no_options": "集群设置由 PVE 节点配置统一管理。",
@@ -394,6 +402,7 @@
       "node_cpu_info": {
         "name": "CPU 信息"
       },
+      "node_ksm_status": {"name": "KSM Status"},
       "node_ksm_shared": {
         "name": "KSM 共享内存"
       },
@@ -523,6 +532,12 @@
       "proxmox_node": {
         "name": "节点状态"
       },
+      "sidecar_status": {"name": "Sidecar Status"},
+      "replication_jobs": {"name": "Replication Jobs"},
+      "replication_status": {"name": "Replication Status"},
+      "replication_last_sync": {"name": "Replication {job_id} Last Replication"},
+      "replication_next_sync": {"name": "Replication {job_id} Next Replication"},
+      "replication_duration": {"name": "Replication {job_id} Duration"},
       "proxmox_storages": {
         "name": "存储"
       },
@@ -636,6 +651,10 @@
       "name": "Proxmox：启动备份",
       "description": "将选定的虚拟机和/或容器备份到指定存储。",
       "fields": {
+        "entry_id": {
+          "name": "PVE 配置条目 ID",
+          "description": "可选的配置条目 ID，用于区分同名节点。"
+        },
         "node": {
           "name": "节点",
           "description": "节点名称（例如 server）"
@@ -662,7 +681,7 @@
         },
         "delay_between": {
           "name": "备份间隔",
-          "description": "两次备份之间等待的秒数"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         }
       }
     },
@@ -670,6 +689,10 @@
       "name": "Proxmox：大规模备份",
       "description": "备份所选节点上的所有虚拟机和/或容器。",
       "fields": {
+        "entry_id": {
+          "name": "PVE 配置条目 ID",
+          "description": "可选的配置条目 ID，用于区分同名节点。"
+        },
         "node": {
           "name": "节点",
           "description": "节点名称（例如 pve）"
@@ -692,7 +715,7 @@
         },
         "delay_between": {
           "name": "备份间隔",
-          "description": "两次备份之间等待的秒数（0 = 无间隔）"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         },
         "include_vms": {
           "name": "包含虚拟机",
@@ -708,6 +731,10 @@
       "name": "Proxmox：关闭节点",
       "description": "请求确认并关闭所选节点。",
       "fields": {
+        "entry_id": {
+          "name": "PVE 配置条目 ID",
+          "description": "可选的配置条目 ID，用于区分同名节点。"
+        },
         "node": {
           "name": "节点",
           "description": "节点名称（例如 pve）"
@@ -722,6 +749,10 @@
       "name": "Proxmox：重启节点",
       "description": "请求确认并重启所选节点。",
       "fields": {
+        "entry_id": {
+          "name": "PVE 配置条目 ID",
+          "description": "可选的配置条目 ID，用于区分同名节点。"
+        },
         "node": {
           "name": "节点",
           "description": "节点名称（例如 pve）"
@@ -732,15 +763,24 @@
         }
       }
     },
+    "dashboard_preview": {
+      "name": "Dashboard preview",
+      "description": "Return a read-only inventory and static dashboard plan for all Proxmox entries. Does not install or modify dashboards."
+    },
     "wake_node": {
       "name": "Proxmox：唤醒节点",
       "description": "使用 Wake-on-LAN 唤醒 Proxmox 节点。",
       "fields": {
+        "entry_id": {
+          "name": "PVE 配置条目 ID",
+          "description": "可选的配置条目 ID，用于区分同名节点。"
+        },
         "node": {
           "name": "节点"
         },
         "mac": {
-          "name": "MAC 地址"
+          "name": "MAC 地址",
+          "description": "显式指定的 MAC 优先；否则使用所选配置条目中配置的节点 MAC。"
         }
       }
     }

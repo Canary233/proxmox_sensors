@@ -1,155 +1,177 @@
-# 🔌 Step 3: Installing the Integration in Home Assistant
+# 🔌 Step 3: Home Assistant Setup — PVE, PBS and CLUSTER
 
-To visualize all data (temperatures, hardware sensors, disks, PBS, VMs and CTs), we will use the **Proxmox Extended Sensors** integration.
-
----
-
-## 1. Installation via HACS
-
-As this is a custom integration, you must first add it to HACS:
-
-1. Go to **HACS → Integrations**  
-2. Click the **three dots** (top right)  
-3. Select **Custom repositories**  
-4. Add this repository:  
-   `https://github.com/Javisen/proxmox_sensors/`  
-5. In **Category**, select `Integration`  
-6. Install the integration and **restart Home Assistant**
+This guide explains how to install **Proxmox Extended Sensors V5** and add PVE, PBS or CLUSTER connections to Home Assistant.
 
 ---
 
-## 2. Adding the integration
+## 1. Install via HACS
 
-After restarting:
+[![Open your Home Assistant instance and open Proxmox Extended Sensors in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Javisen&repository=proxmox_sensors&category=integration)
 
-1. Go to **Settings → Devices & Services**  
-2. Click **Add Integration**  
-3. Search for **Proxmox Extended Sensors**
+**Proxmox Extended Sensors is included in the default HACS repository. You do not need to add a custom repository.**
 
----
-
-## 3. Connection configuration
-
-### 🔹 Host
-- **Local network:** `192.168.1.50`  
-- **External access:** `proxmox.mydomain.com`  
-
-> It is not necessary to include `http://` or `https://`. This is detected automatically.
+1. Open **HACS → Integrations**.
+2. Search for **Proxmox Extended Sensors**.
+3. Download it.
+4. Restart Home Assistant.
 
 ---
 
-### 🔹 Server type
-- **PVE** → Proxmox Virtual Environment  
-- **PBS** → Proxmox Backup Server  
+## 2. Add the integration
+
+After restarting Home Assistant:
+
+1. Go to **Settings → Devices & Services**.
+2. Click **Add Integration**.
+3. Search for **Proxmox Extended Sensors**.
+
+The first setup screen asks for:
+
+- Host
+- Server type
+
+Available server types are:
+
+- **PVE** — Proxmox Virtual Environment
+- **PBS** — Proxmox Backup Server
+- **CLUSTER** — Proxmox cluster view
 
 ---
 
-### 🔹 Authentication method
+## 3. Host
 
-- **Username + password** → PVE only  
-- **API Token** → Recommended and mandatory for PBS  
+Enter the server IP address or hostname, for example:
 
----
+```text
+192.168.1.50
+```
 
-## 🔐 Option A: Username and password (PVE only)
+or:
 
-Fields:
+```text
+pve.example.local
+```
 
-- **User:** `user@realm`  
-  - Example: `homeassistant@pve`  
-- **Password:** user password  
-
-> 💡 Since V3, the node is detected automatically. Manual entry is not required.
-
----
-
-## 🔐 Option B: API Token (recommended)
-
-Fields:
-
-- **User:** `user@realm`  
-- **Token ID:** only the name → `ha-token`  
-- **Token Secret:** the secret generated in Proxmox  
-
-> ⚠️ Do not use the format `user@pve!token`
+The integration handles the connection scheme internally, so normally you should enter only the host value requested by the setup form.
 
 ---
 
-## 🧠 Resource selection (PVE)
+## 4. Authentication
 
-After connecting, the integration will automatically detect available resources.
+### PVE
 
-You can select:
+V5 supports:
 
-- Virtual machines (VMs)  
-- Containers (CTs)  
-- Physical disks  
-- Storages  
+- Username + password
+- API Token
 
-> 💡 Select only what you need to keep Home Assistant clean and efficient.
+### PBS
 
----
+The current V5 setup flow uses **API Token authentication** for PBS.
 
-## 🧭 Visual Installation Guide
+### CLUSTER
 
-Below is the complete process with screenshots:
-
-<details>
-  <summary>🪪 Server connection</summary>
-  <p align="center">
-    <img src="../../img/install/setup_pve_1.png" alt="Proxmox Connection" width="600">
-  </p>
-  <p align="center"><i>It is not necessary to include http/https.</i></p>
-</details>
-
-<details>
-  <summary>🪪 Login with username and password (PVE)</summary>
-  <p align="center">
-    <img src="../../img/install/access_passw.png" alt="User Login" width="600">
-  </p>
-  <p align="center"><i>Use the correct realm (pam or pve).</i></p>
-</details>
-
-<details>
-  <summary>🪪 Login with token (PVE and PBS)</summary>
-  <p align="center">
-    <img src="../../img/install/access_token.png" alt="Token Login" width="600">
-  </p>
-  <p align="center"><i>Enter only the token name in Token ID.</i></p>
-</details>
-
-<details>
-  <summary>🧠 Node selection (V3)</summary>
-  <p align="center">
-    <img src="../../img/install/node_select.png" alt="Node Selection" width="600">
-  </p>
-  <p align="center"><i>Nodes are detected automatically and can be manually selected.</i></p>
-</details>
-
-<details>
-  <summary>⚙️ Resource selection</summary>
-  <p align="center">
-    <img src="../../img/install/resources_select.png" alt="Resource Selection" width="600">
-  </p>
-</details>
+CLUSTER authentication follows its own setup flow and uses the credentials configured for cluster access.
 
 ---
 
-## ⚠️ Note about PBS in managed environments
+## 5. API Token fields
 
-If you are using a **managed or multi-tenant PBS** (Tuxis, Hetzner, etc.):
+When token authentication is selected, enter:
 
-- You will not have access to hardware sensors  
-- You will not see temperatures or physical disks  
-- There will be no node metrics  
+- **User** → complete user and realm, for example `homeassistant@pve`
+- **Token ID** → token name only, for example `ha-token`
+- **Token Secret** → generated token secret
 
-This is normal because:
+Do not place the complete combined token string in the Token ID field.
 
-- You do not have access to the actual hardware  
-- The provider restricts the system  
-- Low-level permissions do not exist  
+---
 
-**Result:**  
-Only limited datastore data will be displayed.
+## 6. PVE node and resource selection
 
---- 
+After a valid PVE connection, the integration discovers the available Proxmox resources and continues through its node/resource selection flow.
+
+Depending on the environment, you can configure monitoring for resources such as:
+
+- nodes
+- VMs
+- LXC containers
+- storages
+- hardware information
+
+V5 is cluster-aware for VM/LXC identity, so guest entities can follow migrations between nodes while preserving their Home Assistant identity.
+
+---
+
+## 7. PBS setup
+
+A PBS connection creates its own Home Assistant config entry.
+
+V5 assigns a persistent PBS server identity so multiple PBS instances can coexist without mixing maintenance actions or datastore state.
+
+PBS monitoring can include:
+
+- datastore usage
+- backup information
+- deduplication
+- task status
+- GC
+- Prune
+- Verify
+- Sync when a Sync Job exists
+
+---
+
+## 8. CLUSTER setup
+
+The CLUSTER server type is used for cluster-wide entities such as:
+
+- quorum and node state
+- aggregate CPU and RAM
+- VM and CT counts
+- cluster storage information
+- failed tasks
+- backup health
+- PVE replication status
+
+---
+
+## 9. Optional Dynamic Proxmox Dashboard
+
+V5 includes an optional dashboard generator for PVE, PBS and CLUSTER.
+
+### Requirements
+
+- Proxmox Extended Sensors V5
+- Card Mod
+
+### Installation
+
+1. Install **Card Mod** from HACS.
+2. Add this Lovelace resource as a **JavaScript Module**:
+
+   ```text
+   /proxmox_sensors/proxmox-dashboard.js
+   ```
+
+3. Reload the browser.
+4. Create a new dashboard and choose the **Proxmox Extended Sensors** community strategy.
+5. Select one of the dashboard types offered for your installation: **PVE**, **PBS** or **CLUSTER**.
+
+The dashboard remains strategy-driven until you choose **Take Control**. After that, you can edit it like any normal Lovelace dashboard.
+
+---
+
+## 10. Managed PBS services
+
+On hosted or multi-tenant PBS services, the provider may restrict low-level node and hardware information.
+
+That does not necessarily indicate an integration error. The available entities depend on what the provider exposes through your PBS account and API permissions.
+
+---
+
+## ✔ Conclusion
+
+Your PVE, PBS and/or CLUSTER connection should now be available in Home Assistant.
+
+Next: [04. FAQ and Troubleshooting](04-faq.md)

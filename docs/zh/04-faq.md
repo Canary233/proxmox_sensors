@@ -1,236 +1,45 @@
-# ❓ FAQ — 常见问题
+# ❓ FAQ — Proxmox Extended Sensors V5
 
-这里整理了使用 **Proxmox Extended Sensors** 时最常见的问题与处理方法。
+## 🔐 连接
+检查可访问性、user/realm、token、secret、API 权限和 SSL。`Permission denied` 通常表示权限不足。
 
----
+## 🌡️ 硬件与 Sidecar
+缺少温度时：运行 `sensors`、`systemctl status pve-sensors.service`，然后访问 `http://PROXMOX_IP:9000/sensors`。
 
-# 🔐 连接问题
+**Sidecar Status** 汇总 Memory、Mounts、Sensors 和 SMART（`ok`、`degraded`、`error`、`unknown`）。V5 尽可能保留最后有效值。
 
-## ❌ 无法登录
+## 🖥️ VM/LXC 迁移
+V5 使用 cluster-wide 身份以保留 `unique_id`、`entity_id`、历史、统计、自动化和 dashboards。协调完成前，源节点 device 可能暂时为空。
 
-### ✔ 只填写 IP 或域名
+由于没有足够可靠的指标，不提供 VM 磁盘百分比；有数据时可提供 CT 磁盘百分比。
 
-正确：
+## 🔁 PVE 复制
+提供集群状态以及每个 job 的持续时间、上次和下次复制。临时 API/runtime 错误不会自动视为真实复制失败。
 
-- `192.168.1.10`
-- `pve.mydomain.com`
+## 🗄️ PBS
+V5 支持 GC、Prune、Verify 和 Sync。
 
-错误：
+> **V5 安全性变更：**与 V4.x 不同，**Prune、Verify 和 Sync 不再由集成自行构造并直接执行维护操作**。V5 会运行管理员预先在 PBS 中配置的对应 **Job**。这样操作始终遵循 PBS 的策略，尤其是 Prune Job 的保留规则，由 PBS 决定哪些备份可以删除。
 
-- `http://...`
-- `https://...`
+**GC 有意保留为 datastore 的直接操作。** Garbage Collection 用于回收不再被引用的空间，因此非常适合在备份存储空间不足时通过 Home Assistant 自动化触发。
 
----
+Prune、Verify 和 Sync 分别要求 PBS 中存在对应的 **Prune Job、Verify Job 或 Sync Job**。如果所需 Job 不存在，**集成会返回错误，并且不会退回到直接执行的替代操作**。这是有意的安全设计，并非集成故障。
 
-### ✔ 不要填写端口
+HA 发起的操作通过 PBS UPID 跟踪到实际结果。多个 PBS 使用持久身份。
 
-集成会自动检测端口。
+## 🛡️ 局部故障
+API 出现问题时仍显示旧值可能是预期行为：V5 会保留最后一次有效数据，直到新的数据恢复。
 
----
+## 🎨 Dashboard
+可选。需要 V5、Card Mod 和 `/proxmox_sensors/proxmox-dashboard.js`。使用 **Take Control** 后可自定义。
 
-### ✔ 检查权限
+## 🧾 提交 issue 前
+检查连接、credentials、token、权限、HA 重启、必要时检查 sidecar 和 logs。如果 Prune/Verify/Sync 报错，还应确认对应的 PBS Job 已存在且配置正确。请从截图/log 中删除密码和 Token Secret。
 
-- PVE → `PVEAdmin`
-- PBS → `Administrator`
-- 权限必须分配在 `/`
+## 已知限制
+- 不提供 VM 磁盘百分比
+- 托管 PBS 可能提供更少数据
+- 硬件数据取决于 host/drivers/sidecar
+- VM/LXC 迁移后源 device 可能暂时为空
 
----
-
-### ✔ Token 必须处于启用状态
-
-在 Proxmox → API Tokens 中确认 **Enabled: Yes**。
-
----
-
-## ❌ 使用 Token 时提示 “Permission denied”
-
-### ✔ 权限应分配在 `/`
-
-不要只分配到某个节点，而应分配到根路径 `/`。
-
-### ✔ 父用户也需要权限
-
-Token 所属的父用户必须拥有有效角色。
-
----
-
-# 🌡️ 传感器与硬件
-
-## ❌ 不显示温度
-
-请确认已经执行：
-
-```bash
-apt install lm-sensors
-sensors-detect
-modprobe coretemp
-```
-
-并确认 `pve-sensors.service` 已启动。
-
----
-
-## ❌ 不显示磁盘或 SMART 数据
-
-可能原因：
-
-- 磁盘本身不支持 SMART
-- VM 内的 NVMe 通常不可用
-- 部分 RAID/HBA/存储控制器不暴露这些数据
-
----
-
-## ❌ 不显示 VM 或 CT
-
-请检查：
-
-- 权限是否为 `PVEAdmin`
-- 集群环境中是否连接到了主节点或可访问完整资源的节点
-
----
-
-# 🗄️ PBS（Backup Server）
-
-## ❌ 看不到 datastore 数据
-
-### 🔒 托管型 PBS（Tuxis、Hetzner 等）
-
-你通常无法访问：
-
-- 磁盘使用率
-- 去重信息
-- 温度
-- CPU/RAM
-- SMART
-
-👉 这是服务商限制，不是集成本身的问题。
-
----
-
-# 🧠 System Insight（V3/V4）
-
-## ❓ Node Score 是什么？
-
-它是基于节点状态计算出的全局评分，通常会考虑：
-
-- CPU
-- 系统负载
-- IO Wait
-
-它可以帮助你快速判断节点是否处于压力状态。
-
----
-
-## ❓ “Node Stress” 或 “Overload” 是什么意思？
-
-表示系统正在承受压力，例如：
-
-- CPU 使用率高
-- 系统负载高
-- 磁盘 IO 饱和
-
-👉 这些状态适合用于自动化、通知或告警。
-
----
-
-# 🔄 性能
-
-## ❓ 集成更新很慢
-
-这是正常设计。
-
-集成使用优化后的更新机制来：
-
-- 降低 Proxmox 负载
-- 避免打满 API
-
-默认更新间隔大约为 10 秒。
-
----
-
-# 🧩 一般使用
-
-## ❓ 可以添加多台服务器吗？
-
-可以。
-
-你可以添加多个集成实例，分别连接 PVE 或 PBS。
-
----
-
-## 🔒 安全吗？
-
-相对安全：
-
-- 使用 API Token
-- 不执行远程命令
-- 不修改 Proxmox 配置
-- 不额外开放 Proxmox 端口
-
-> 如果你启用了传感器 API bridge，请确保只在可信网络中使用，或自行加上网络访问控制。
-
----
-
-## 🧹 如何移除旧传感器？
-
-1. 删除集成
-2. 重启 Home Assistant
-3. 重新添加集成
-
----
-
-## 🧾 提 Issue 前检查清单
-
-报告问题前，请先确认：
-
-- ✔ 浏览器能访问 Proxmox
-- ✔ Host 只填写了 IP 或域名
-- ✔ Token 已启用
-- ✔ 权限已分配到 `/`
-- ✔ 已安装 `lm-sensors`
-- ✔ 已重启 Home Assistant
-- ✔ 已查看 Home Assistant 日志
-
----
-
-# 🚫 已知限制
-
-## 🔒 托管型 PBS
-
-通常无法访问内部硬件指标。
-
----
-
-## 🧊 虚拟机里的传感器
-
-虚拟机里通常没有真实硬件传感器。
-
----
-
-## 📦 不支持 SMART 的磁盘
-
-部分磁盘或控制器不会暴露 SMART 数据。
-
----
-
-## 🔐 权限分配不正确
-
-如果权限没有分配在 `/`，API 调用可能失败。
-
----
-
-## 🕒 更新间隔
-
-集成会故意保留一定更新间隔，以避免增加 Proxmox 负载。
-
----
-
-## 🧩 Proxmox 集群
-
-建议连接到可以访问完整集群资源的主节点。
-
----
-
-## 🌐 SSL 证书
-
-自签名证书可以使用。
+[⬅ 返回 V5 文档](README.md)

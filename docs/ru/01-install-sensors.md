@@ -1,117 +1,44 @@
-# 🚀 Шаг 1: Установка и настройка датчиков
+# 🌡️ Шаг 1: Аппаратные датчики и Sidecar
 
-**В данном руководстве объясняется, как подготовить узел Proxmox для передачи данных об оборудовании и обеспечить доступность показаний температуры и данных SMART для Home Assistant.**
+Руководство подготавливает узел Proxmox VE к чтению аппаратных данных, которых нет в стандартном API Proxmox. V5 использует sidecar для температур, памяти, mounts и SMART и добавляет **Sidecar Status**.
 
-
-## 1. Установка зависимостей
-
-*Чтобы интеграция могла считывать данные со всех аппаратных датчиков и атрибуты SMART дисков, необходимо установить в Proxmox следующие инструменты:*
-
-- **lm-sensors** → Датчики процессора, материнской платы, чипсета, VRM, вентиляторов…**
-- **smartmontools** → Информация SMART для HDD, SSD и NVMe**
-
-
+## 1. Установить пакеты
 ```bash
-
 apt update && apt install lm-sensors smartmontools -y
-
 ```
 
-## 2. Определение оборудования
-
-* **Запустите мастер определения для поиска необходимых модулей:**
-
-
+## 2. Обнаружить датчики
 ```bash
-
 sensors-detect
-
 ```
+Следуйте мастеру и включите подходящие модули. Если предлагается запись в `/etc/modules`, сохраните необходимые модули для загрузки после перезапуска.
 
-**Отвечайте YES (или нажимайте Enter) на все вопросы. По завершении система определит необходимые модули (например, `coretemp` для процессоров Intel).**
-
-
-## 3. Автозагрузка модулей
-
-**Чтобы датчики активировались автоматически при перезагрузке сервера, мастер `sensors-detect` задаст важный вопрос в конце процесса:**
-
-
-`Do you want to add these lines automatically to /etc/modules? (yes/NO)`
-
-
-
-> [!CAUTION]
-> **Вы должны вручную написать `yes` и нажать Enter.** Если вы просто нажмете Enter, ничего не написав, система выберет `NO` по умолчанию. В этом случае датчики не будут загружаться после перезагрузки, и Home Assistant перестанет получать данные о температуре.
-
-
-
-## 4. Немедленная проверка
-
-**Чтобы активировать датчики прямо сейчас без перезагрузки, выполните:**
-
-
-
+## 3. Проверить
 ```bash
-
-# Загрузка определенных модулей (пример для Intel)
-
-modprobe coretemp
-
-# Проверка отображения температуры
-
 sensors
-
 ```
-
-## 🚀 Шаг 5: Установка сервера датчиков (API Bridge)
-**Официальный API Proxmox не передает данные всех аппаратных датчиков, поэтому необходимо установить небольшой скрипт, который будет служить мостом между Proxmox и Home Assistant.**
-
-1. **Загрузка и установка скрипта**
-Выполните эти команды в терминале вашего сервера Proxmox:
+Для Intel с `coretemp`, если требуется:
 ```bash
-# Скачивание скрипта из репозитория
-wget https://raw.githubusercontent.com/Javisen/proxmox_sensors/main/scripts/pve-sensors-api.py -O /usr/local/bin/pve-sensors-api.py
+modprobe coretemp
+sensors
+```
+Не используйте `coretemp` принудительно на системах с другим драйвером.
 
-# Предоставление прав на выполнение
+## 4. Установить sidecar
+```bash
+wget https://raw.githubusercontent.com/Javisen/proxmox_sensors/main/scripts/pve-sensors-api.py -O /usr/local/bin/pve-sensors-api.py
 chmod +x /usr/local/bin/pve-sensors-api.py
 ```
-2. **Настройка в качестве системной службы**
-Создайте файл службы:
-```bash
-cat <<EOF > /etc/systemd/system/pve-sensors.service
-[Unit]
-Description=PVE Sensors API (User Mode)
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/python3 /usr/local/bin/pve-sensors-api.py
-Restart=always
-RestartSec=10s
-
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=full
-
-[Install]
-WantedBy=default.target
-EOF
-```
-
-3. **Немедленная активация**
-
+Создайте systemd-службу для `/usr/bin/python3 /usr/local/bin/pve-sensors-api.py` с автоматическим перезапуском, затем:
 ```bash
 systemctl daemon-reload
-systemctl enable --now pve-sensors
+systemctl enable --now pve-sensors.service
 ```
 
-4. **Финальная проверка**
-Откройте в браузере:
-```
-http://IP_ВАШЕГО_PROXMOX:9000/sensors
-```
+## 5. Проверить sidecar
+`systemctl status pve-sensors.service`, затем `http://IP_PROXMOX:9000/sensors`. JSON-ответ подтверждает работу.
 
-Если появится JSON-ответ с температурами и датчиками, значит сервер работает правильно.
+## 6. При сбое
+V5 по возможности сохраняет последние корректные аппаратные значения. **Sidecar Status** показывает Memory, Mounts, Sensors и SMART как `ok`, `degraded`, `error` или `unknown`.
 
-## ✔ Заключение
-
-**Как только команда sensors начнет возвращать показания, а служба pve-sensors станет активной, Home Assistant сможет получать все данные об оборудовании без необходимости дополнительной настройки.**
+Далее: [02. Пользователь и права Proxmox](02-proxmox-config.md)

@@ -1,18 +1,38 @@
 """Virtual Machine sensors for Proxmox Extended Sensors."""
 
+import logging
+from math import isfinite
+
+from homeassistant.components.sensor import SensorStateClass
+from homeassistant.helpers import device_registry as dr
+
 from .base import ProxmoxBaseSensor
+from .replication import GuestReplicationMixin
 from ..const import DOMAIN
 from ..logic.guest_keys import make_guest_key
 
+_LOGGER = logging.getLogger(__name__)
 
-class ProxmoxVMSensor(ProxmoxBaseSensor):
 
-    def __init__(self, coordinator, vm_id, node, label, guest_key=None):
-        uid = f"proxmox_vm_{node}_{vm_id}_status_v1"
+class ProxmoxVMSensor(GuestReplicationMixin, ProxmoxBaseSensor):
+
+    def __init__(self, coordinator, vm_id, node, label, guest_key=None, cluster_id=None):
         self._label = label
         self._vm_id = vm_id
         self._guest_key = guest_key or make_guest_key(node, vm_id)
-        super().__init__(coordinator, self._guest_key, None, None, uid, node)
+        self._cluster_id = str(cluster_id).lower() if cluster_id else None
+
+        if self._cluster_id:
+            # Node-independent identity: survives live migrations.
+            uid = f"proxmox_vm_{self._cluster_id}_{vm_id}_status_v1"
+            id_scope = f"cluster_{self._cluster_id}"
+        else:
+            uid = f"proxmox_vm_{node}_{vm_id}_status_v1"
+            id_scope = None
+
+        super().__init__(
+            coordinator, self._guest_key, None, None, uid, node, id_scope=id_scope
+        )
         self._attr_translation_key = "vm_status"
         self._attr_icon = "mdi:monitor"
 
@@ -21,13 +41,31 @@ class ProxmoxVMSensor(ProxmoxBaseSensor):
         node_id = self._node.lower()
         vmid = str(self._vm_id)
 
-        return {
-            "identifiers": {(DOMAIN, f"proxmox_vm_{node_id}_{vmid}_v1")},
+        if self._cluster_id:
+            identifiers = {(DOMAIN, f"proxmox_vm_cluster_{self._cluster_id}_{vmid}_v1")}
+        else:
+            identifiers = {(DOMAIN, f"proxmox_vm_{node_id}_{vmid}_v1")}
+
+        info = {
+            "identifiers": identifiers,
             "name": f"4. VM: {self._label}-({self._vm_id})",
-            "via_device": (DOMAIN, f"proxmox_node_{node_id}"),
             "manufacturer": "Proxmox",
             "model": "QEMU Virtual Machine",
         }
+
+        try:
+            info["via_device_id"] = dr.async_get_device_id_by_identifier(
+                self.coordinator.hass,
+                (DOMAIN, f"proxmox_node_{node_id}"),
+                config_entry_id=self.coordinator.config_entry.entry_id,
+            )
+        except ValueError:
+            _LOGGER.debug(
+                "Parent node device %s not found in config entry %s; omitting via_device_id",
+                node_id,
+                self.coordinator.config_entry.entry_id,
+            )
+        return info
 
     def _get_vm_data(self):
         vm_map = self.coordinator.data.get("vms", {})
@@ -49,43 +87,92 @@ class ProxmoxVMSensor(ProxmoxBaseSensor):
         vm_data = self._get_vm_data()
 
         if not vm_data:
-            return {}
+            return self._replication_attributes()
 
-        attrs = {}
+        attrs = self._replication_attributes()
 
         if node := vm_data.get("node"):
             attrs["node"] = node
+
+        onboot = bool(vm_data.get("onboot", False))
+        attrs["onboot"] = onboot
+
+        expected_state = "running" if onboot else None
+        attrs["expected_state"] = expected_state
+
+        if expected_state is not None:
+            actual_state = str(vm_data.get("status", "")).lower()
+            attrs["state_matches_onboot"] = actual_state == expected_state
+        else:
+            attrs["state_matches_onboot"] = None
 
         return attrs
     
 class ProxmoxVMAttributeSensor(ProxmoxBaseSensor):
 
     def __init__(
-        self, coordinator, vm_id, node, label, attr_name, unit, icon, guest_key=None
+        self,
+        coordinator,
+        vm_id,
+        node,
+        label,
+        attr_name,
+        unit,
+        icon,
+        guest_key=None,
+        cluster_id=None,
     ):
         self._vm_id = vm_id
         self._label = label
         self._attr_key = attr_name
         self._guest_key = guest_key or make_guest_key(node, vm_id)
+        self._cluster_id = str(cluster_id).lower() if cluster_id else None
 
-        uid = f"proxmox_vm_{node}_{vm_id}_{attr_name.lower()}_v1"
+        if self._cluster_id:
+            uid = f"proxmox_vm_{self._cluster_id}_{vm_id}_{attr_name.lower()}_v1"
+            id_scope = f"cluster_{self._cluster_id}"
+        else:
+            uid = f"proxmox_vm_{node}_{vm_id}_{attr_name.lower()}_v1"
+            id_scope = None
 
-        super().__init__(coordinator, self._guest_key, None, unit, uid, node)
+        super().__init__(
+            coordinator, self._guest_key, None, unit, uid, node, id_scope=id_scope
+        )
         self._attr_translation_key = f"vm_{attr_name}"
         self._attr_icon = icon
+        if attr_name in ("cpu_usage", "memory_used", "memory_total", "disk_total", "uptime"):
+            self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def device_info(self):
         node_id = self._node.lower()
         vmid = str(self._vm_id)
 
-        return {
-            "identifiers": {(DOMAIN, f"proxmox_vm_{node_id}_{vmid}_v1")},
+        if self._cluster_id:
+            identifiers = {(DOMAIN, f"proxmox_vm_cluster_{self._cluster_id}_{vmid}_v1")}
+        else:
+            identifiers = {(DOMAIN, f"proxmox_vm_{node_id}_{vmid}_v1")}
+
+        info = {
+            "identifiers": identifiers,
             "name": f"4. VM: {self._label}-({self._vm_id})",
-            "via_device": (DOMAIN, f"proxmox_node_{node_id}"),
             "manufacturer": "Proxmox",
             "model": "QEMU Virtual Machine",
         }
+
+        try:
+            info["via_device_id"] = dr.async_get_device_id_by_identifier(
+                self.coordinator.hass,
+                (DOMAIN, f"proxmox_node_{node_id}"),
+                config_entry_id=self.coordinator.config_entry.entry_id,
+            )
+        except ValueError:
+            _LOGGER.debug(
+                "Parent node device %s not found in config entry %s; omitting via_device_id",
+                node_id,
+                self.coordinator.config_entry.entry_id,
+            )
+        return info
 
     def _get_vm_data(self):
         vm_map = self.coordinator.data.get("vms", {})
@@ -143,10 +230,22 @@ class ProxmoxVMAttributeSensor(ProxmoxBaseSensor):
         """Extra attributes for additional VM info."""
         vm_data = self._get_vm_data()
 
-        if not vm_data:
-            return {}
-
         attrs = {}
+        if self._attr_key == "memory_used":
+            attrs["usage_percent"] = None
+            used_key, total_key = ("mem", "maxmem")
+            used = vm_data.get(used_key)
+            total = vm_data.get(total_key)
+            if not isinstance(used, bool) and not isinstance(total, bool):
+                try:
+                    used = float(used)
+                    total = float(total)
+                    if isfinite(used) and isfinite(total) and used >= 0 and total > 0:
+                        percent = used / total * 100
+                        if isfinite(percent):
+                            attrs["usage_percent"] = round(percent, 2)
+                except (TypeError, ValueError, OverflowError):
+                    pass
              
         # CPU extra info
         if self._attr_key == "cpu_usage":

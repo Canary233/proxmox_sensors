@@ -77,12 +77,20 @@
       "unknown": "Неочікувана помилка. Перевірте логи Home Assistant."
     },
     "abort": {
+      "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "Цей вузол вже налаштовано.",
       "no_data": "Дані кластера не отримано. Перевірте вашу конфігурацію.",
       "cluster_no_options": "Налаштування кластера керуються з конфігурації вузла PVE."
     }
   },
   "options": {
+    "error": {
+      "guest_discovery_unavailable": "Guest discovery is unavailable. Guest selections will be preserved.",
+      "guest_selection_changed": "Guest selections changed in another Options flow. Reopen Options and try again.",
+      "guest_inventory_changed": "The guest inventory changed. Reopen Options and try again.",
+      "invalid_guest_selection": "Only guests shown for this node can be selected.",
+      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs."
+    },
     "abort": {
       "pbs_no_options": "Цей сервер PBS не має налаштовуваних опцій.",
       "cluster_no_options": "Налаштування кластера керуються з конфігурації вузла PVE.",
@@ -394,6 +402,7 @@
       "node_cpu_info": {
         "name": "Інформація про ЦП"
       },
+      "node_ksm_status": {"name": "KSM Status"},
       "node_ksm_shared": {
         "name": "Розділювана пам'ять KSM"
       },
@@ -523,6 +532,12 @@
       "proxmox_node": {
         "name": "Статус вузла"
       },
+      "sidecar_status": {"name": "Sidecar Status"},
+      "replication_jobs": {"name": "Replication Jobs"},
+      "replication_status": {"name": "Replication Status"},
+      "replication_last_sync": {"name": "Replication {job_id} Last Replication"},
+      "replication_next_sync": {"name": "Replication {job_id} Next Replication"},
+      "replication_duration": {"name": "Replication {job_id} Duration"},
       "proxmox_storages": {
         "name": "Сховища"
       },
@@ -636,6 +651,10 @@
       "name": "Proxmox: Запустити резервне копіювання",
       "description": "Резервне копіювання вибраних ВМ та/або контейнерів у вказане сховище.",
       "fields": {
+        "entry_id": {
+          "name": "ID запису PVE",
+          "description": "Необов’язковий ID запису конфігурації для розрізнення вузлів з однаковими назвами."
+        },
         "node": {
           "name": "Вузол",
           "description": "Ім'я вузла (наприклад, server)"
@@ -662,7 +681,7 @@
         },
         "delay_between": {
           "name": "Інтервал між копіями",
-          "description": "Секунди очікування між резервними копіями"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         }
       }
     },
@@ -670,6 +689,10 @@
       "name": "Proxmox: Масове резервне копіювання",
       "description": "Резервне копіювання всіх ВМ та/або контейнерів на вибраному вузлі.",
       "fields": {
+        "entry_id": {
+          "name": "ID запису PVE",
+          "description": "Необов’язковий ID запису конфігурації для розрізнення вузлів з однаковими назвами."
+        },
         "node": {
           "name": "Вузол",
           "description": "Ім'я вузла (наприклад, pve)"
@@ -692,7 +715,7 @@
         },
         "delay_between": {
           "name": "Інтервал між копіями",
-          "description": "Секунди між резервними копіями (0 = без інтервалу)"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         },
         "include_vms": {
           "name": "Включати ВМ",
@@ -708,6 +731,10 @@
       "name": "Proxmox: Вимкнути вузол",
       "description": "Запитує підтвердження та вимикає вибраний вузол.",
       "fields": {
+        "entry_id": {
+          "name": "ID запису PVE",
+          "description": "Необов’язковий ID запису конфігурації для розрізнення вузлів з однаковими назвами."
+        },
         "node": {
           "name": "Вузол",
           "description": "Ім'я вузла (наприклад, pve)"
@@ -722,6 +749,10 @@
       "name": "Proxmox: Перезавантажити вузол",
       "description": "Запитує підтвердження та перезавантажує вибраний вузол.",
       "fields": {
+        "entry_id": {
+          "name": "ID запису PVE",
+          "description": "Необов’язковий ID запису конфігурації для розрізнення вузлів з однаковими назвами."
+        },
         "node": {
           "name": "Вузол",
           "description": "Ім'я вузла (наприклад, pve)"
@@ -732,15 +763,24 @@
         }
       }
     },
+    "dashboard_preview": {
+      "name": "Dashboard preview",
+      "description": "Return a read-only inventory and static dashboard plan for all Proxmox entries. Does not install or modify dashboards."
+    },
     "wake_node": {
       "name": "Proxmox: Розбудити вузол",
       "description": "Будить вузол Proxmox через Wake-on-LAN.",
       "fields": {
+        "entry_id": {
+          "name": "ID запису PVE",
+          "description": "Необов’язковий ID запису конфігурації для розрізнення вузлів з однаковими назвами."
+        },
         "node": {
           "name": "Вузол"
         },
         "mac": {
-          "name": "MAC-адреса"
+          "name": "MAC-адреса",
+          "description": "Явно вказаний MAC має пріоритет; інакше використовується MAC вузла з вибраного запису конфігурації."
         }
       }
     }

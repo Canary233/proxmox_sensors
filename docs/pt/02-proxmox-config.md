@@ -1,79 +1,24 @@
-# 🔐 Passo 2: Configuração de Usuários e Permissões
+# 🔐 Passo 2: Utilizador e permissões Proxmox
 
-**Para que o Home Assistant se comunique com o Proxmox de forma segura, é recomendável não usar o usuário root. Criaremos um usuário dedicado e atribuiremos as permissões necessárias para que a integração funcione a 100%.**
+Use preferencialmente uma conta dedicada ao Home Assistant em vez de `root`. As permissões dependem das funções: monitorização, controlo de guests, backups ou manutenção PBS.
 
-> ⚠️ **IMPORTANTE:**  
-> Devido às funções avançadas da integração (controle de VMs/CTs, backups individuais e em massa, ações PBS…), é necessário atribuir **permissões de administrador** tanto no PVE quanto no PBS.
+## 1. Autenticação
+**PVE:** utilizador + palavra-passe ou API Token; token recomendado para uma conta dedicada.
 
----
+**PBS:** o fluxo V5 atual usa API Token com User, Token ID e Token Secret.
 
-## 1. Diferença entre PVE e PBS
+## 2. Criar utilizador
+Em PVE: **Datacenter → Permissions → Users**, por exemplo `homeassistant@pve`. Em PBS crie separadamente o utilizador com o realm correto; PVE e PBS têm sistemas de autenticação distintos.
 
-### **Proxmox VE (PVE)**
-- Você pode usar **Usuário/Senha** ou **Token da API**.  
-- O usuário deve ter a função **PVEAdmin**.
+## 3. Permissões
+Para todas as funções, a documentação do projeto tem usado tradicionalmente **PVEAdmin** em `/` para PVE e **Administrator** em `/` para PBS. São funções amplas. Com permissões mais restritas, teste controlo VM/CT, backups, cluster/tarefas, storage, replicação PVE e PBS GC/Prune/Verify/Sync.
 
-### **Proxmox Backup Server (PBS)**
-- É **obrigatório** usar um **Token da API**.  
-- O usuário deve ter a função **Administrator** (o PBS não possui uma função intermediária válida).
+## 4. API Token
+Em PVE: **Datacenter → Permissions → API Tokens**. Crie, por exemplo, `ha-token` e guarde imediatamente o secret. Com **Privilege Separation**, o token pode precisar de permissões explícitas adicionais.
 
----
+## 5. Valores Home Assistant
+- **User:** utilizador completo + realm (`homeassistant@pve`)
+- **Token ID:** apenas o nome do token (`ha-token`)
+- **Token Secret:** secret gerado
 
-## 2. Criação do Usuário
-
-1. Vá para **Datacenter → Permissions → Users**  
-2. Clique em **Add**  
-3. Configure:  
-   - **User:** `homeassistant`  
-   - **Realm:** `pve`  
-   - **Password:** apenas se você for usar login por senha no PVE  
-4. Salve as alterações
-
----
-
-## 3. Atribuição da Função Correta
-
-1. Vá para **Datacenter → Permissions**  
-2. Clique em **Add → User Permission**  
-3. Configure os seguintes campos:
-
-### ✔ Para PVE:
-- **Path:** `/`  
-- **User:** `homeassistant@pve`  
-- **Role:** `PVEAdmin`  
-
-### ✔ Para PBS:
-- **Path:** `/`  
-- **User:** `homeassistant@pve`  
-- **Role:** `Administrator`  
-
-> 💡 **Por que `/` é necessário:**  
-> A integração precisa de acesso global para ler nós, VMs, CTs, discos, datastores e tarefas.
-
----
-
-## 4. Geração do Token da API (Obrigatório para PBS)
-
-1. Vá para **Datacenter → Permissions → API Tokens**  
-2. Clique em **Add**  
-3. Configure:  
-   - **User:** `homeassistant@pve`  
-   - **Token ID:** `ha-token`  
-   - **Privilege Separation:** **desmarcado**  
-   - **Expire:** **Never**  
-4. Ao criar o token, o Proxmox exibirá:  
-   - **Token ID**  
-   - **Secret** (exibido apenas uma vez)
-
-> [!WARNING]
-> **Copie o "Secret" agora e guarde-o em um local seguro.** Depois que você fechar esta janela, o Proxmox nunca mais o mostrará novamente por motivos de segurança.
-
-> [!TIP]
-> ### 💡 Esqueceu de copiar o Secret?
-> Não se preocupe. Embora o Proxmox não o mostre novamente por motivos de segurança, você não precisa excluir o token e começar do zero:
-> 
-> 1. Na lista **API Tokens**, selecione o token que você já criou.
-> 2. Clique no botão **Regenerate**.
-> 3. O sistema invalidará imediatamente a chave antiga e fornecerá um **novo Secret**.
-> 
-> *Lembre-se de que, se você regenerar o Secret, deverá atualizá-lo na configuração do Home Assistant para que a integração possa se reconectar.*
+Seguinte: [03. Configuração Home Assistant](03-login-pve-pbs.md)

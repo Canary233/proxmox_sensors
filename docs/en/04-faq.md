@@ -1,225 +1,196 @@
-# ❓ FAQ — Frequently Asked Questions
+# ❓ FAQ — Proxmox Extended Sensors V5
 
-Here you will find the most common problems when using **Proxmox Extended Sensors** and their solutions.
-
----
-
-# 🔐 Connection problems
-
-## ❌ I can't log in
-
-### ✔ Use only IP or domain
-Correct:
-- `192.168.1.10`  
-- `pve.mydomain.com`
-
-Incorrect:
-- `http://...`
-- `https://...`
+This page covers common setup and troubleshooting questions for **Proxmox Extended Sensors V5**.
 
 ---
 
-### ✔ Do not include the port
-The integration detects it automatically.
+## 🔐 Connection problems
+
+### I cannot connect
+
+Check the basics first:
+
+- the Proxmox host is reachable from Home Assistant
+- the user and realm are correct
+- the token is enabled
+- the token secret is correct
+- the account has permission to access the required API endpoints
+- SSL verification is configured appropriately for your environment
+
+For token setup, see [02. Proxmox User and Permissions](02-proxmox-config.md).
 
 ---
 
-### ✔ Check permissions
+### I get `Permission denied`
 
-- PVE → `PVEAdmin`  
-- PBS → `Administrator`  
-- They must be assigned at `/`
+This usually means the credentials are valid but the account or token cannot access one or more required endpoints.
 
----
+Check:
 
-### ✔ The Token must be active
-In Proxmox → API Tokens → **Enabled: Yes**
+- the parent user permissions
+- token permissions / Privilege Separation
+- permissions assigned at the required path
+- whether you are using a deliberately restricted role
 
----
-
-## ❌ “Permission denied” with Token
-
-### ✔ Permissions at `/`
-They should not be assigned to a node, but to the root.
-
-### ✔ User without permissions
-The parent user must have a valid role.
+V5 distinguishes minimum connectivity from optional endpoint access, so a connection may work while some features remain unavailable because of limited permissions.
 
 ---
 
-# 🌡️ Sensors and hardware
+## 🌡️ Hardware and Sidecar
 
-## ❌ Temperatures do not appear
+### Temperatures do not appear
 
-Make sure to:
-
+Verify the Proxmox host first:
 
 ```bash
-apt install lm-sensors
-sensors-detect
-modprobe coretemp
+sensors
 ```
 
-And have the service active.
+Then check the sidecar:
+
+```bash
+systemctl status pve-sensors.service
+```
+
+And test:
+
+```text
+http://YOUR_PROXMOX_IP:9000/sensors
+```
+
+See [01. Hardware Sensors and Sidecar Setup](01-install-sensors.md).
 
 ---
 
-## ❌ Disks or SMART do not appear
+### What does `Sidecar Status` mean?
 
-- The disk must support it  
-- NVMe in VMs → not available  
-- Some controllers do not expose data  
+V5 exposes one Sidecar Status diagnostic sensor per PVE node.
 
----
+It summarizes the state of the sidecar sections used for Memory, Mounts, Sensors and SMART. Typical states are `ok`, `degraded`, `error` and `unknown`.
 
-## ❌ VMs or CTs do not appear
-
-- Check permissions (`PVEAdmin`)  
-- In a cluster, use the main node  
+A sidecar failure does not necessarily clear every hardware sensor immediately. V5 preserves the last valid hardware values where possible until fresh data is available again.
 
 ---
 
-## 🗄️ PBS (Backup Server)
+### Some SMART or temperature sensors are missing
 
-### ❌ I don't see datastore data
-
-### 🔒 Managed PBS (Tuxis, Hetzner…)
-
-You will not have access to:
-
-- Disk usage  
-- Deduplication  
-- Temperature  
-- CPU/RAM  
-- SMART  
-
-👉 This is a provider limitation, not an integration issue.
+The integration can only expose values available from the host hardware, kernel drivers, `lm-sensors`, SMART tools and the sidecar. Missing values can be normal when a controller does not expose SMART data, a sensor driver is unavailable, the device does not report the metric or the hardware is virtualized.
 
 ---
 
-## 🧠 System Insight (V3/V4)
+## 🖥️ VMs and LXC containers
 
-### ❓ What is Node Score?
+### What happens when a VM or CT migrates to another node?
 
-It is a global evaluation of the node's status based on:
+V5 uses cluster-scoped guest identity. The goal is that the same Home Assistant entities continue following the VM/LXC after migration, preserving `unique_id`, `entity_id`, history, statistics, automations and dashboards.
 
-- CPU  
-- Load  
-- IO Wait  
-
-It allows you to quickly detect if a node is under load.
+Immediately after a migration, the old node device can remain temporarily empty while reconciliation completes. This is expected and avoids deleting/recreating guest entities.
 
 ---
 
-### ❓ What does “Node Stress” or “Overload” mean?
+### Why is there no VM disk percentage sensor?
 
-It indicates that the system is under pressure:
-
-- High CPU  
-- High load  
-- Disk saturation  
-
-👉 Useful for automations or alerts.
+V5 intentionally does not expose VM disk percentage because the available Proxmox data does not provide a sufficiently reliable source metric for it. CT disk percentage is available when the required data exists.
 
 ---
 
-## 🔄 Performance
+## 🔁 PVE Replication
 
-### ❓ The integration takes a long time to update
+### Where does replication information appear?
 
-This is normal.
+V5 exposes cluster-level replication status plus per-job entities associated with the guest, including Duration, Last Replication and Next Replication. Replication job identity is based on the Proxmox replication job rather than the physical node, so it can survive guest migration.
 
-The integration uses an optimized system to:
+### Does an API error automatically mean the replication failed?
 
-- Reduce load on Proxmox  
-- Avoid saturating the API  
-
-Default interval: ~10 seconds.
+No. V5 keeps replication inventory and runtime information separate. A temporary API/runtime query failure is not automatically treated as a real replication job failure.
 
 ---
 
-## 🧩 General use
+## 🗄️ Proxmox Backup Server
 
-### ❓ Can I use multiple servers?
+### Which PBS maintenance actions are supported?
 
-Yes.  
-You can add multiple instances (PVE/PBS).
+V5 supports Garbage Collection (GC), Prune, Verify and Sync.
 
----
+> **V5 safety change:** unlike V4.x, **Prune, Verify and Sync are no longer executed as direct maintenance operations built by the integration**. V5 runs the corresponding **PBS Job already configured by the administrator**. This keeps the operation under PBS policy and is especially important for Prune, where the configured retention rules must determine which backups are eligible for removal.
 
-### 🔒 Is it safe?
+**GC is intentionally kept as a direct datastore action.** Garbage Collection reclaims unreferenced space and is useful for Home Assistant automations, for example when backup storage is running low.
 
-Yes:
+Home Assistant-triggered actions are tracked using the PBS task UPID so the integration can follow the actual task result.
 
-- Uses API Tokens  
-- Does not execute remote commands  
-- Does not modify configuration  
-- Does not open ports  
+### Why does Prune, Verify or Sync return an error?
 
----
+Each of these actions requires its corresponding Job to exist in PBS. Before using the Home Assistant action, configure the appropriate **Prune Job, Verify Job or Sync Job** in Proxmox Backup Server.
 
-## 🧹 Remove old sensors
+If no compatible Job exists, **the integration returns an error and does not fall back to a direct operation**. This is intentional safety behavior, not a malfunction.
 
-1. Delete the integration  
-2. Restart Home Assistant  
-3. Add it again  
+### Why is Sync unavailable?
 
----
+Sync requires a configured PBS Sync Job. If the PBS server has no Sync Job, there is nothing for the integration to run and the action will report an error rather than attempting an alternative operation.
 
-## 🧾 Checklist before opening an Issue
+### Can I add more than one PBS server?
 
-Before reporting a problem:
+Yes. V5 assigns persistent PBS identities so actions, datastores and maintenance state remain associated with the correct PBS instance.
 
-- ✔ Can you access Proxmox from the browser?  
-- ✔ Do you use only IP or domain?  
-- ✔ Is the Token active?  
-- ✔ Permissions at `/`?  
-- ✔ Is lm-sensors installed?  
-- ✔ Did you restart Home Assistant?  
-- ✔ Did you check logs?  
+### Hosted or managed PBS shows fewer entities
+
+Hosted PBS providers can restrict node-level or hardware information. The available entities depend on the API access and permissions the provider exposes to your account.
 
 ---
 
-## 🚫 Known limitations
+## 🛡️ Partial failures and preserved values
 
-### 🔒 Managed PBS
+### Why does an entity still show its previous value during an API problem?
 
-No access to internal metrics (hardware, datastore, etc.)
-
----
-
-### 🧊 Sensors in VMs
-
-There are no real sensors in virtual machines.
+This can be intentional in V5. The integration refreshes major sections independently and preserves the last valid data for an affected section where possible. When the endpoint becomes available again, fresh values replace the preserved data automatically.
 
 ---
 
-### 📦 Disks without SMART
+## 🎨 Dynamic Proxmox Dashboard
 
-Some disks/controllers do not expose data.
+### Is the dashboard required?
 
----
+No. The dashboard is completely optional. The integration works without it.
 
-### 🔐 Incorrectly assigned permissions
+### What do I need to use the V5 dashboard?
 
-If they are not at `/`, the API fails.
+You need Proxmox Extended Sensors V5, Card Mod and the Lovelace JavaScript resource:
 
----
+```text
+/proxmox_sensors/proxmox-dashboard.js
+```
 
-### 🕒 Update intervals
+Then create a dashboard using the **Proxmox Extended Sensors** community strategy.
 
-There is an intentional delay to avoid load.
+### Can I edit the generated dashboard?
 
----
-
-### 🧩 Proxmox Cluster
-
-Connect to the main node.
+Yes. Use Home Assistant's **Take Control** feature. After taking control, you can customize the dashboard like normal Lovelace.
 
 ---
 
-### 🌐 SSL certificates
+## 🔄 Updates and performance
 
-Self-signed certificates are accepted.
+### How often does the integration update?
+
+The integration uses coordinated asynchronous updates and controlled concurrency to avoid unnecessarily saturating Proxmox APIs. Do not rely on an old fixed interval documented for previous versions; the effective behavior depends on the current coordinator implementation and server type.
 
 ---
+
+## 🧾 Before opening an issue
+
+Please check Proxmox connectivity, credentials and realm, API Token status, required permissions, Home Assistant restart after installation/update, `pve-sensors.service` when hardware data is involved, and relevant Home Assistant logs. For Prune, Verify or Sync errors, also confirm that the corresponding PBS Job exists and is correctly configured.
+
+When reporting an issue, remove passwords, token secrets and other credentials from screenshots and logs.
+
+---
+
+## Known limitations
+
+- VM disk percentage is not exposed because there is no sufficiently reliable metric.
+- Hosted PBS environments can expose less information than a locally managed PBS.
+- Hardware data depends on the host, drivers and sidecar endpoints.
+- Immediately after VM/LXC migration, the source-node device can remain temporarily empty while reconciliation completes.
+
+---
+
+[⬅ Back to the V5 documentation](README.md)

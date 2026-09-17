@@ -77,12 +77,20 @@
       "unknown": "Unerwarteter Fehler. Überprüfe die Home Assistant-Protokolle."
     },
     "abort": {
+      "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "Dieser Knoten ist bereits konfiguriert.",
       "no_data": "Keine Cluster-Daten empfangen. Überprüfe deine Konfiguration.",
       "cluster_no_options": "Cluster-Einstellungen werden über die PVE-Knotenkonfiguration verwaltet."
     }
   },
   "options": {
+    "error": {
+      "guest_discovery_unavailable": "Guest discovery is unavailable. Guest selections will be preserved.",
+      "guest_selection_changed": "Guest selections changed in another Options flow. Reopen Options and try again.",
+      "guest_inventory_changed": "The guest inventory changed. Reopen Options and try again.",
+      "invalid_guest_selection": "Only guests shown for this node can be selected.",
+      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs."
+    },
     "abort": {
       "pbs_no_options": "Dieser PBS-Server hat keine konfigurierbaren Optionen.",
       "cluster_no_options": "Cluster-Einstellungen werden über die PVE-Knotenkonfiguration verwaltet.",
@@ -394,6 +402,7 @@
       "node_cpu_info": {
         "name": "CPU-Informationen"
       },
+      "node_ksm_status": {"name": "KSM Status"},
       "node_ksm_shared": {
         "name": "KSM Shared Memory"
       },
@@ -523,6 +532,12 @@
       "proxmox_node": {
         "name": "Knotenstatus"
       },
+      "sidecar_status": {"name": "Sidecar Status"},
+      "replication_jobs": {"name": "Replication Jobs"},
+      "replication_status": {"name": "Replication Status"},
+      "replication_last_sync": {"name": "Replication {job_id} Last Replication"},
+      "replication_next_sync": {"name": "Replication {job_id} Next Replication"},
+      "replication_duration": {"name": "Replication {job_id} Duration"},
       "proxmox_storages": {
         "name": "Speicher"
       },
@@ -636,6 +651,10 @@
       "name": "Proxmox: Backup starten",
       "description": "Erstellt ein Backup der ausgewählten VMs und/oder Container im angegebenen Speicher.",
       "fields": {
+        "entry_id": {
+          "name": "PVE-Eintrags-ID",
+          "description": "Optionale Konfigurationseintrags-ID zur Unterscheidung gleichnamiger Knoten."
+        },
         "node": {
           "name": "Knoten",
           "description": "Knotenname (z.B. server)"
@@ -662,7 +681,7 @@
         },
         "delay_between": {
           "name": "Backup-Intervall",
-          "description": "Sekunden zwischen zwei Backups"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         }
       }
     },
@@ -670,6 +689,10 @@
       "name": "Proxmox: Massen-Backup",
       "description": "Backup aller VMs und/oder Container auf dem ausgewählten Knoten.",
       "fields": {
+        "entry_id": {
+          "name": "PVE-Eintrags-ID",
+          "description": "Optionale Konfigurationseintrags-ID zur Unterscheidung gleichnamiger Knoten."
+        },
         "node": {
           "name": "Knoten",
           "description": "Knotenname (z.B. pve)"
@@ -692,7 +715,7 @@
         },
         "delay_between": {
           "name": "Backup-Intervall",
-          "description": "Sekunden zwischen Backups (0 = kein Intervall)"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         },
         "include_vms": {
           "name": "VMs einschließen",
@@ -708,6 +731,10 @@
       "name": "Proxmox: Knoten herunterfahren",
       "description": "Fordert Bestätigung an und fährt den ausgewählten Knoten herunter.",
       "fields": {
+        "entry_id": {
+          "name": "PVE-Eintrags-ID",
+          "description": "Optionale Konfigurationseintrags-ID zur Unterscheidung gleichnamiger Knoten."
+        },
         "node": {
           "name": "Knoten",
           "description": "Knotenname (z.B. pve)"
@@ -722,6 +749,10 @@
       "name": "Proxmox: Knoten neu starten",
       "description": "Fordert Bestätigung an und startet den ausgewählten Knoten neu.",
       "fields": {
+        "entry_id": {
+          "name": "PVE-Eintrags-ID",
+          "description": "Optionale Konfigurationseintrags-ID zur Unterscheidung gleichnamiger Knoten."
+        },
         "node": {
           "name": "Knoten",
           "description": "Knotenname (z.B. pve)"
@@ -732,15 +763,24 @@
         }
       }
     },
+    "dashboard_preview": {
+      "name": "Dashboard preview",
+      "description": "Return a read-only inventory and static dashboard plan for all Proxmox entries. Does not install or modify dashboards."
+    },
     "wake_node": {
       "name": "Proxmox: Knoten aufwecken",
       "description": "Weckt einen Proxmox-Knoten per Wake-on-LAN auf.",
       "fields": {
+        "entry_id": {
+          "name": "PVE-Eintrags-ID",
+          "description": "Optionale Konfigurationseintrags-ID zur Unterscheidung gleichnamiger Knoten."
+        },
         "node": {
           "name": "Knoten"
         },
         "mac": {
-          "name": "MAC-Adresse"
+          "name": "MAC-Adresse",
+          "description": "Eine explizite MAC hat Vorrang; andernfalls wird die konfigurierte Knoten-MAC des ausgewählten Eintrags verwendet."
         }
       }
     }

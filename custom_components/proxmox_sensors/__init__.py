@@ -9,8 +9,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.const import Platform
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr
 
 from .services import register_services
+from .dashboard.preview import async_register_preview
+from .dashboard.websocket import async_register_dashboard_websocket
+from .dashboard.frontend import async_setup_dashboard_frontend
 from .const import (
     DOMAIN,
     CONF_HOST,
@@ -25,16 +29,79 @@ from .const import (
 
 from .api import ProxmoxClient
 from .coordinator import create_proxmox_coordinator, create_cluster_coordinator
+from .pbs_identity import async_remember_pbs_identity
+from .pbs_devices import reconcile_pbs_devices
 
 _LOGGER = logging.getLogger(__name__)
 
-ENTRY_VERSION = 2
+ENTRY_VERSION = 3
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BUTTON,
     Platform.BINARY_SENSOR,
 ]
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Register global diagnostics, including while individual entries are unloaded."""
+    async_register_preview(hass)
+    async_register_dashboard_websocket(hass)
+    try:
+        await async_setup_dashboard_frontend(hass)
+    except Exception:
+        _LOGGER.exception("Could not serve dashboard strategy; integration monitoring remains available")
+    return True
+
+
+def _entry_platform_type(config_entry: ConfigEntry) -> str:
+    return (
+        config_entry.data.get(CONF_PLATFORM_TYPE)
+        or config_entry.data.get("server_type")
+        or ""
+    ).upper()
+
+
+def _next_pbs_server_id(hass: HomeAssistant) -> str:
+    max_index = 0
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if _entry_platform_type(entry) != "PBS":
+            continue
+        server_id = str(entry.data.get("server_id", "")).lower()
+        if not server_id.startswith("pbs_"):
+            continue
+        suffix = server_id.removeprefix("pbs_")
+        if suffix.isdigit():
+            max_index = max(max_index, int(suffix))
+    return f"pbs_{max_index + 1}"
+
+
+def _ensure_pbs_server_id(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    if _entry_platform_type(config_entry) != "PBS":
+        return False
+
+    if config_entry.data.get("server_id"):
+        return False
+
+    ent_reg = er.async_get(hass)
+    entries = er.async_entries_for_config_entry(ent_reg, config_entry.entry_id)
+    if any(
+        (entity.unique_id or "").lower().startswith("pbs_default_")
+        for entity in entries
+    ):
+        server_id = "default"
+    else:
+        server_id = _next_pbs_server_id(hass)
+
+    hass.config_entries.async_update_entry(
+        config_entry, data={**config_entry.data, "server_id": server_id}
+    )
+    _LOGGER.info(
+        "Persisted stable PBS server_id %s for legacy entry %s",
+        server_id,
+        config_entry.entry_id,
+    )
+    return True
 
 
 async def async_migrate_entry(hass, config_entry):
@@ -53,8 +120,9 @@ async def async_migrate_entry(hass, config_entry):
     ent_reg = er.async_get(hass)
     entries = er.async_entries_for_config_entry(ent_reg, config_entry.entry_id)
 
+    _ensure_pbs_server_id(hass, config_entry)
     server_id = (config_entry.data.get("server_id") or "default").lower()
-    server_type = (config_entry.data.get("server_type") or "").lower()
+    server_type = _entry_platform_type(config_entry).lower()
 
     _LOGGER.debug("Migration server_type raw value: %s", server_type)
 
@@ -80,9 +148,111 @@ async def async_migrate_entry(hass, config_entry):
         ent_reg.async_update_entity(entity.entity_id, new_unique_id=new_unique_id)
         _LOGGER.debug("Updated unique_id: %s -> %s", old_unique_id, new_unique_id)
 
+
+    if server_type == "pve":
+        await _migrate_guest_ids_to_cluster_scope(hass, config_entry)
+
     hass.config_entries.async_update_entry(config_entry, version=ENTRY_VERSION)
     _LOGGER.info("Migration completed for entry %s", config_entry.entry_id)
     return True
+
+
+async def _migrate_guest_ids_to_cluster_scope(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> None:
+    """Rewrite VM/CT unique_ids from per-node to cluster-scoped format.
+
+    This only runs when a sibling CLUSTER entry is ALREADY configured for
+    this same cluster (matching the behaviour of ``_resolve_cluster_id`` in
+    sensor/__init__.py), so it never fires for standalone/single-node
+    installs. Guests keep their legacy per-node unique_id in that case,
+    which is a no-op and requires no migration.
+
+    A CLUSTER entry stores the cluster name in ``cluster_name`` and is
+    created automatically by this integration once the cluster is first
+    detected, so if it exists, we can read the cluster id directly from it
+    without another API call.
+    """
+    node = (config_entry.data.get(CONF_NODE) or "").lower()
+    if not node:
+        return
+
+    cluster_entry = next(
+        (
+            e
+            for e in hass.config_entries.async_entries(DOMAIN)
+            if e.data.get(CONF_PLATFORM_TYPE) == "CLUSTER"
+        ),
+        None,
+    )
+    if cluster_entry is None:
+        _LOGGER.debug(
+            "No CLUSTER entry configured yet, skipping guest id migration for %s",
+            node,
+        )
+        return
+
+    cluster_id = (cluster_entry.data.get("cluster_name") or "").lower()
+    if not cluster_id:
+        return
+
+    legacy_vm_prefix = f"pve_{node}_proxmox_vm_{node}_"
+    legacy_ct_prefix = f"pve_{node}_proxmox_ct_{node}_"
+
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    entries = er.async_entries_for_config_entry(ent_reg, config_entry.entry_id)
+
+    migrated = 0
+
+    for entity in entries:
+        old_unique_id = (entity.unique_id or "").lower()
+
+        for kind, legacy_prefix in (("vm", legacy_vm_prefix), ("ct", legacy_ct_prefix)):
+            if not old_unique_id.startswith(legacy_prefix):
+                continue
+
+            # remainder is "<vmid>_<suffix...>", e.g. "100_status_v1"
+            remainder = old_unique_id[len(legacy_prefix):]
+            vmid, sep, suffix = remainder.partition("_")
+            if not sep or not vmid.isdigit():
+                continue
+
+            new_unique_id = (
+                f"pve_cluster_{cluster_id}_proxmox_{kind}_{cluster_id}_{vmid}_{suffix}"
+            )
+
+            ent_reg.async_update_entity(
+                entity.entity_id, new_unique_id=new_unique_id
+            )
+            migrated += 1
+            _LOGGER.info(
+                "Migrated guest entity to cluster-scoped id: %s -> %s",
+                old_unique_id,
+                new_unique_id,
+            )
+
+            old_device_identifier = f"proxmox_{kind}_{node}_{vmid}_v1"
+            device = dev_reg.async_get_device_by_identifier(
+                (DOMAIN, old_device_identifier), config_entry_id=config_entry.entry_id
+            )
+            if device is not None:
+                new_device_identifier = (
+                    f"proxmox_{kind}_cluster_{cluster_id}_{vmid}_v1"
+                )
+                dev_reg.async_update_device(
+                    device.id,
+                    new_identifiers={(DOMAIN, new_device_identifier)},
+                )
+
+            break
+
+    if migrated:
+        _LOGGER.info(
+            "Cluster-scoped guest id migration: %d entities updated for %s",
+            migrated,
+            node,
+        )
 
 
 async def _async_manage_cluster_entry(
@@ -93,7 +263,6 @@ async def _async_manage_cluster_entry(
 ):
     """Create or remove the CLUSTER config entry based on enable_cluster flag."""
 
-    # Find existing cluster entries for this cluster name
     existing = [
         e
         for e in hass.config_entries.async_entries(DOMAIN)
@@ -109,12 +278,10 @@ async def _async_manage_cluster_entry(
                 await hass.config_entries.async_remove(e.entry_id)
         return
 
-    # Already exists (created by any PVE entry for this cluster) → nothing to do
     if existing:
         _LOGGER.debug("CLUSTER entry for %s already exists, skipping", cluster_name)
         return
 
-    # Create new CLUSTER entry reusing PVE credentials
     _LOGGER.info("Auto-creating CLUSTER entry for %s", cluster_name)
 
     data = pve_entry.data
@@ -145,6 +312,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not migrated:
             return False
 
+    _ensure_pbs_server_id(hass, entry)
+
     data = entry.data
 
     client = ProxmoxClient(
@@ -161,15 +330,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if entry.data.get(CONF_PLATFORM_TYPE) == "PBS":
         try:
+            pbs_instance_id = await client.get_pbs_instance_id(hass)
             hostname = entry.data.get("hostname") or await client.get_pbs_hostname(hass)
+
+            new_data = entry.data
+            if (
+                pbs_instance_id
+                and entry.data.get("pbs_instance_id") != pbs_instance_id
+            ):
+                new_data = {**new_data, "pbs_instance_id": pbs_instance_id}
+
+            await async_remember_pbs_identity(
+                hass, pbs_instance_id, entry.data.get("server_id")
+            )
 
             if hostname:
                 new_title = f"PBS: {hostname}"
 
-                new_data = entry.data
-
                 if entry.data.get("hostname") != hostname:
-                    new_data = {**entry.data, "hostname": hostname}
+                    new_data = {**new_data, "hostname": hostname}
 
                 if entry.title != new_title or new_data is not entry.data:
                     hass.config_entries.async_update_entry(
@@ -177,6 +356,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         data=new_data,
                         title=new_title,
                     )
+            elif new_data is not entry.data:
+                hass.config_entries.async_update_entry(entry, data=new_data)
 
         except Exception as e:
             _LOGGER.error("PBS title update failed: %s", e)
@@ -197,11 +378,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "features": data.get("features", {}),
     }
 
+    if data.get(CONF_PLATFORM_TYPE) == "PBS":
+        reconcile_pbs_devices(hass, entry, coordinator.data.get("pbs_datastores", {}))
+
     register_services(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    hass.data[DOMAIN][entry.entry_id]["services_ready"] = True
 
-    #  Auto-manage CLUSTER entry after PVE loads
     if data.get(CONF_PLATFORM_TYPE) == "PVE":
         enable_cluster = entry.options.get(
             "enable_cluster", data.get("enable_cluster", True)
@@ -225,7 +409,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
 
             except Exception as err:
-                # NEVER let cluster management fail the PVE entry
                 _LOGGER.error(
                     "Error managing CLUSTER entry (PVE entry unaffected): %s", err
                 )
@@ -269,7 +452,6 @@ async def _async_setup_cluster_entry(hass: HomeAssistant, entry: ConfigEntry) ->
         "features": {},
     }
 
-    # Only sensors for CLUSTER entries
     await hass.config_entries.async_forward_entry_setups(entry, [Platform.SENSOR])
 
     return True
@@ -277,12 +459,21 @@ async def _async_setup_cluster_entry(hass: HomeAssistant, entry: ConfigEntry) ->
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
-    if entry.data.get(CONF_PLATFORM_TYPE) == "CLUSTER":
-        unload_ok = await hass.config_entries.async_unload_platforms(
-            entry, [Platform.SENSOR]
-        )
-    else:
-        unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if runtime is not None:
+        runtime["unloading"] = True
+
+    try:
+        if entry.data.get(CONF_PLATFORM_TYPE) == "CLUSTER":
+            unload_ok = await hass.config_entries.async_unload_platforms(
+                entry, [Platform.SENSOR]
+            )
+        else:
+            unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    finally:
+        if runtime is not None:
+            runtime.pop("unloading", None)
 
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)

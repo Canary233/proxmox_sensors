@@ -27,6 +27,12 @@ from .const import (
     CONF_PLATFORM_TYPE,
     CONF_VERIFY_SSL,
 )
+from .pbs_identity import (
+    async_remember_pbs_identity,
+    async_reserved_pbs_server_ids,
+    async_server_id_for_pbs_identity,
+    pbs_server_id_available_for_identity,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,12 +45,40 @@ SERVER_TYPES = {
 PVE_MIN_ENDPOINTS = ["nodes"]
 PVE_EXTRA_ENDPOINTS = ["cluster/resources"]
 PBS_MIN_ENDPOINTS = ["admin/datastore"]
-PBS_EXTRA_ENDPOINTS = ["status/datastore", "admin/tasks"]
+PBS_EXTRA_ENDPOINTS = ["version", "nodes/localhost/status", "nodes/localhost/tasks"]
+
+
+def _pbs_server_id_index(server_id: str | None) -> int | None:
+    server_id = str(server_id or "").lower()
+    if not server_id.startswith("pbs_"):
+        return None
+    suffix = server_id.removeprefix("pbs_")
+    if suffix.isdigit():
+        return int(suffix)
+    return None
+
+
+def _next_pbs_server_id(entries, reserved_server_ids=()):
+    max_index = 0
+    for entry in entries:
+        platform_type = (
+            entry.data.get(CONF_PLATFORM_TYPE) or entry.data.get("server_type") or ""
+        ).upper()
+        if platform_type != "PBS":
+            continue
+        index = _pbs_server_id_index(entry.data.get("server_id"))
+        if index is not None:
+            max_index = max(max_index, index)
+    for server_id in reserved_server_ids:
+        index = _pbs_server_id_index(server_id)
+        if index is not None:
+            max_index = max(max_index, index)
+    return f"pbs_{max_index + 1}"
 
 
 class ProxmoxConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self):
         self._config = {}
@@ -204,6 +238,17 @@ class ProxmoxConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "insufficient_permissions"
                 else:
                     self._config["limited_permissions"] = not validation["has_all"]
+                    try:
+                        pbs_instance_id = await client.get_pbs_instance_id(
+                            self.hass, raise_errors=True
+                        )
+                        if pbs_instance_id:
+                            self._config["pbs_instance_id"] = pbs_instance_id
+                    except Exception as err:
+                        _LOGGER.debug(
+                            "PBS instance identity unavailable during setup: %s",
+                            err,
+                        )
                     return await self._finish()
 
         return self.async_show_form(
@@ -332,7 +377,7 @@ class ProxmoxConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                     has_all = False
 
-            except ProxmoxPermissionError as err:
+            except (ProxmoxPermissionError, CannotConnect) as err:
                 _LOGGER.debug(
                     "Extra validation endpoint failed with %s: %s",
                     type(err).__name__,
@@ -521,10 +566,29 @@ class ProxmoxConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # ============= PBS =================
         if server_type == "PBS":
             entries = self.hass.config_entries.async_entries(DOMAIN)
-            pbs_entries = [
-                e for e in entries if e.data.get(CONF_PLATFORM_TYPE) == "PBS"
-            ]
-            self._config["server_id"] = f"pbs_{len(pbs_entries) + 1}"
+            reserved_server_ids = await async_reserved_pbs_server_ids(self.hass)
+            pbs_instance_id = self._config.get("pbs_instance_id")
+            restored_server_id = await async_server_id_for_pbs_identity(
+                self.hass, pbs_instance_id
+            )
+            if restored_server_id and pbs_server_id_available_for_identity(
+                self.hass, restored_server_id, pbs_instance_id
+            ):
+                self._config["server_id"] = restored_server_id
+            else:
+                if restored_server_id:
+                    _LOGGER.warning(
+                        "PBS identity %s maps to active server_id %s; assigning a new id",
+                        pbs_instance_id,
+                        restored_server_id,
+                    )
+                self._config["server_id"] = _next_pbs_server_id(
+                    entries, reserved_server_ids
+                )
+
+            await async_remember_pbs_identity(
+                self.hass, pbs_instance_id, self._config["server_id"]
+            )
 
             try:
                 client = ProxmoxClient(

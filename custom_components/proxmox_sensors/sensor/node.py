@@ -18,10 +18,41 @@ from ..logic.node_metrics import (
 )
 
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 import logging
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class ProxmoxSidecarStatusSensor(ProxmoxBaseSensor):
+    """Expose coordinator health on the existing PVE node device."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["ok", "degraded", "error", "unknown"]
+
+    def __init__(self, coordinator, node, device):
+        super().__init__(
+            coordinator, "sidecar_status", None, None,
+            f"proxmox_node_{node}_sidecar_status", node,
+        )
+        self._attr_translation_key = "sidecar_status"
+        self.device_entry = device
+
+    @property
+    def device_info(self):
+        # Attach directly; do not register or rename a device.
+        return None
+
+    def _get_value(self):
+        return (self.coordinator.data or {}).get("sidecar_status", "unknown")
+
+    @property
+    def extra_state_attributes(self):
+        health = (self.coordinator.data or {}).get("sidecar_health", {})
+        return {
+            f"{endpoint}_status": health.get(endpoint, {}).get("status", "unknown")
+            for endpoint in ("sensors", "smart", "memory", "mounts")
+        }
 
 
 class ProxmoxNodeSensor(ProxmoxBaseSensor):
@@ -262,10 +293,74 @@ class ProxmoxKSMSensor(ProxmoxBaseSensor):
         )
         self._attr_translation_key = "node_ksm_shared"
         self._attr_icon = "mdi:memory-arrow-down"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         val = self.coordinator.data.get("node", {}).get("ksm", {}).get("shared", 0)
         return bytes_to_gb(val)
+
+
+class ProxmoxKSMStatusSensor(ProxmoxBaseSensor):
+    """Expose verified KSM configuration separately from saved-memory measurement."""
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["Configured", "Not configured", "Unavailable"]
+
+    def __init__(self, coordinator, node):
+        super().__init__(coordinator, "ksm_status", None, None, f"p_node_ksm_status_{node}", node)
+        self._attr_translation_key = "node_ksm_status"
+        self._attr_icon = "mdi:memory"
+
+    def _snapshot(self):
+        data = self.coordinator.data.get("ksm_status", {})
+        return data if isinstance(data, dict) else {}
+
+    def _configured(self, data):
+        tuned = data.get("ksmtuned") if isinstance(data.get("ksmtuned"), dict) else {}
+        run = data.get("run")
+        if not data.get("available") or not isinstance(run, int):
+            return None
+        if run != 0:
+            return True
+        load_state = tuned.get("LoadState")
+        active_state = tuned.get("ActiveState")
+        unit_file_state = tuned.get("UnitFileState")
+        if active_state == "active" or unit_file_state in {"enabled", "enabled-runtime"}:
+            return True
+        if load_state == "not-found":
+            return False
+        if (load_state == "loaded" and active_state in {"inactive", "failed"}
+                and unit_file_state in {"disabled", "disabled-runtime", "static", "indirect"}):
+            return False
+        return None
+
+    def _get_value(self):
+        configured = self._configured(self._snapshot())
+        return "Configured" if configured is True else "Not configured" if configured is False else "Unavailable"
+
+    @property
+    def extra_state_attributes(self):
+        data = self._snapshot()
+        if self._get_value() == "Unavailable":
+            return {"data_available": False}
+        if self._get_value() == "Not configured":
+            return {}
+        run = data["run"]
+        attributes = {
+            "activity": "Active" if run == 1 else "Inactive" if run == 0 else "Unmerging" if run == 2 else f"Mode {run}",
+            "ksm_run": run,
+        }
+        tuned = data.get("ksmtuned", {})
+        if tuned.get("ActiveState"):
+            attributes["ksmtuned_status"] = tuned["ActiveState"]
+        for key in ("pages_shared", "pages_sharing", "pages_unshared", "pages_volatile", "full_scans"):
+            if isinstance(data.get(key), int):
+                attributes[key] = data[key]
+        if isinstance(data.get("memory_saved_bytes"), int):
+            attributes["memory_saved"] = data["memory_saved_bytes"]
+            attributes["memory_saved_unit"] = "B"
+        if isinstance(data.get("ram_total_bytes"), (int, float)) and data["ram_total_bytes"] > 0:
+            attributes["ram_total_bytes"] = data["ram_total_bytes"]
+        return attributes
 
 
 class ProxmoxMemorySensor(ProxmoxBaseSensor):
@@ -275,6 +370,7 @@ class ProxmoxMemorySensor(ProxmoxBaseSensor):
         )
         self._attr_translation_key = "node_memory_usage"
         self._attr_icon = "mdi:memory"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         data = self.coordinator.data.get("node", {}).get("memory", {})
@@ -288,6 +384,7 @@ class ProxmoxSwapSensor(ProxmoxBaseSensor):
         )
         self._attr_translation_key = "node_swap_usage"
         self._attr_icon = "mdi:swap-horizontal"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         data = self.coordinator.data.get("node", {}).get("swap", {})
@@ -308,6 +405,7 @@ class ProxmoxRootFSSensor(ProxmoxBaseSensor):
         )
         self._attr_translation_key = "node_rootfs_usage"
         self._attr_icon = "mdi:folder"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         data = self.coordinator.data.get("node", {}).get("rootfs", {})
@@ -418,6 +516,7 @@ class ProxmoxStoragesSensor(CoordinatorEntity, SensorEntity):
         self._attr_translation_key = "proxmox_storages"
         self._attr_unique_id = f"{entry_id}_storages_{node}"
         self._attr_icon = "mdi:database"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_storage_data(self):
         """Get storage data from coordinator, checking multiple possible structures."""
@@ -504,6 +603,7 @@ class ProxmoxNodeLoadAverageSensor(ProxmoxBaseSensor):
         )
         self._attr_translation_key = "node_load_1m"
         self._attr_icon = "mdi:chart-line"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         load = self.coordinator.data.get("node", {}).get("loadavg", [])
@@ -532,6 +632,7 @@ class ProxmoxNodeScoreSensor(ProxmoxBaseSensor):
         )
         self._attr_translation_key = "node_score"
         self._attr_icon = "mdi:speedometer"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         return calculate_node_score(self.coordinator.data.get("node", {}))
@@ -559,6 +660,7 @@ class ProxmoxNodeMountedDisksSensor(ProxmoxBaseSensor):
             node,
         )
         self._attr_translation_key = "node_mounted_disks"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_disk_name(self, disk):
         name = disk.get("dev") or disk.get("devpath")

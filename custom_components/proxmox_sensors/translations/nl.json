@@ -77,12 +77,20 @@
       "unknown": "Onverwachte fout. Controleer de Home Assistant-logboeken."
     },
     "abort": {
+      "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "Dit knooppunt is al geconfigureerd.",
       "no_data": "Geen clustergegevens ontvangen. Controleer uw configuratie.",
       "cluster_no_options": "Clusterinstellingen worden beheerd via de PVE-knooppuntconfiguratie."
     }
   },
   "options": {
+    "error": {
+      "guest_discovery_unavailable": "Guest discovery is unavailable. Guest selections will be preserved.",
+      "guest_selection_changed": "Guest selections changed in another Options flow. Reopen Options and try again.",
+      "guest_inventory_changed": "The guest inventory changed. Reopen Options and try again.",
+      "invalid_guest_selection": "Only guests shown for this node can be selected.",
+      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs."
+    },
     "abort": {
       "pbs_no_options": "Deze PBS-server heeft geen configureerbare opties.",
       "cluster_no_options": "Clusterinstellingen worden beheerd via de PVE-knooppuntconfiguratie.",
@@ -394,6 +402,7 @@
       "node_cpu_info": {
         "name": "CPU-informatie"
       },
+      "node_ksm_status": {"name": "KSM Status"},
       "node_ksm_shared": {
         "name": "KSM Gedeeld Geheugen"
       },
@@ -523,6 +532,12 @@
       "proxmox_node": {
         "name": "Knooppuntstatus"
       },
+      "sidecar_status": {"name": "Sidecar Status"},
+      "replication_jobs": {"name": "Replication Jobs"},
+      "replication_status": {"name": "Replication Status"},
+      "replication_last_sync": {"name": "Replication {job_id} Last Replication"},
+      "replication_next_sync": {"name": "Replication {job_id} Next Replication"},
+      "replication_duration": {"name": "Replication {job_id} Duration"},
       "proxmox_storages": {
         "name": "Opslag"
       },
@@ -636,6 +651,10 @@
       "name": "Proxmox: Backup starten",
       "description": "Maakt een back-up van de geselecteerde VM's en/of containers naar de opgegeven opslag.",
       "fields": {
+        "entry_id": {
+          "name": "PVE-configuratie-ID",
+          "description": "Optionele configuratie-ID om nodes met dezelfde naam te onderscheiden."
+        },
         "node": {
           "name": "Knooppunt",
           "description": "Knooppuntnaam (bijv. server)"
@@ -662,7 +681,7 @@
         },
         "delay_between": {
           "name": "Backup-interval",
-          "description": "Seconden wachten tussen back-ups"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         }
       }
     },
@@ -670,6 +689,10 @@
       "name": "Proxmox: Massale backup",
       "description": "Back-up van alle VM's en/of containers op het geselecteerde knooppunt.",
       "fields": {
+        "entry_id": {
+          "name": "PVE-configuratie-ID",
+          "description": "Optionele configuratie-ID om nodes met dezelfde naam te onderscheiden."
+        },
         "node": {
           "name": "Knooppunt",
           "description": "Knooppuntnaam (bijv. pve)"
@@ -692,7 +715,7 @@
         },
         "delay_between": {
           "name": "Backup-interval",
-          "description": "Seconden tussen back-ups (0 = geen interval)"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         },
         "include_vms": {
           "name": "VM's opnemen",
@@ -708,6 +731,10 @@
       "name": "Proxmox: Knooppunt uitschakelen",
       "description": "Vraagt bevestiging en schakelt het geselecteerde knooppunt uit.",
       "fields": {
+        "entry_id": {
+          "name": "PVE-configuratie-ID",
+          "description": "Optionele configuratie-ID om nodes met dezelfde naam te onderscheiden."
+        },
         "node": {
           "name": "Knooppunt",
           "description": "Knooppuntnaam (bijv. pve)"
@@ -722,6 +749,10 @@
       "name": "Proxmox: Knooppunt herstarten",
       "description": "Vraagt bevestiging en start het geselecteerde knooppunt opnieuw op.",
       "fields": {
+        "entry_id": {
+          "name": "PVE-configuratie-ID",
+          "description": "Optionele configuratie-ID om nodes met dezelfde naam te onderscheiden."
+        },
         "node": {
           "name": "Knooppunt",
           "description": "Knooppuntnaam (bijv. pve)"
@@ -732,15 +763,24 @@
         }
       }
     },
+    "dashboard_preview": {
+      "name": "Dashboard preview",
+      "description": "Return a read-only inventory and static dashboard plan for all Proxmox entries. Does not install or modify dashboards."
+    },
     "wake_node": {
       "name": "Proxmox: Knooppunt ontwaken",
       "description": "Wekt een Proxmox-knooppunt via Wake-on-LAN.",
       "fields": {
+        "entry_id": {
+          "name": "PVE-configuratie-ID",
+          "description": "Optionele configuratie-ID om nodes met dezelfde naam te onderscheiden."
+        },
         "node": {
           "name": "Knooppunt"
         },
         "mac": {
-          "name": "MAC-adres"
+          "name": "MAC-adres",
+          "description": "Een expliciete MAC heeft voorrang; anders wordt de ingestelde node-MAC van de geselecteerde configuratie gebruikt."
         }
       }
     }

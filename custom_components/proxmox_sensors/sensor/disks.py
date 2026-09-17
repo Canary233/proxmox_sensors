@@ -1,7 +1,13 @@
 """Physical disk sensors for Proxmox Extended Sensors."""
 
+import logging
+
+from homeassistant.helpers import device_registry as dr
+
 from .base import ProxmoxBaseSensor
 from ..const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _format_gb(value):
@@ -33,13 +39,26 @@ class ProxmoxDiskSensor(ProxmoxBaseSensor):
     @property
     def device_info(self):
         node_id = self._node.lower()
-        return {
+        info = {
             "identifiers": {(DOMAIN, f"proxmox_disks_group_{node_id}")},
             "name": f"2. Disks: {self._node.capitalize()}",
             "manufacturer": "Proxmox",
             "model": "Physical Disks Storage",
-            "via_device": (DOMAIN, f"proxmox_node_{node_id}"),
         }
+
+        try:
+            info["via_device_id"] = dr.async_get_device_id_by_identifier(
+                self.coordinator.hass,
+                (DOMAIN, f"proxmox_node_{node_id}"),
+                config_entry_id=self.coordinator.config_entry.entry_id,
+            )
+        except ValueError:
+            _LOGGER.debug(
+                "Parent node device %s not found in config entry %s; omitting via_device_id",
+                node_id,
+                self.coordinator.config_entry.entry_id,
+            )
+        return info
 
     def _get_value(self):
         disks = self.coordinator.data.get("disks", {})

@@ -77,12 +77,20 @@
       "unknown": "Неожиданная ошибка. Проверьте логи Home Assistant."
     },
     "abort": {
+      "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "Этот узел уже настроен.",
       "no_data": "Данные кластера не получены. Проверьте вашу конфигурацию.",
       "cluster_no_options": "Настройки кластера управляются из конфигурации узла PVE."
     }
   },
   "options": {
+    "error": {
+      "guest_discovery_unavailable": "Guest discovery is unavailable. Guest selections will be preserved.",
+      "guest_selection_changed": "Guest selections changed in another Options flow. Reopen Options and try again.",
+      "guest_inventory_changed": "The guest inventory changed. Reopen Options and try again.",
+      "invalid_guest_selection": "Only guests shown for this node can be selected.",
+      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs."
+    },
     "abort": {
       "pbs_no_options": "Этот сервер PBS не имеет настраиваемых опций.",
       "cluster_no_options": "Настройки кластера управляются из конфигурации узла PVE.",
@@ -394,6 +402,7 @@
       "node_cpu_info": {
         "name": "Информация о ЦП"
       },
+      "node_ksm_status": {"name": "KSM Status"},
       "node_ksm_shared": {
         "name": "Разделяемая память KSM"
       },
@@ -523,6 +532,12 @@
       "proxmox_node": {
         "name": "Статус узла"
       },
+      "sidecar_status": {"name": "Sidecar Status"},
+      "replication_jobs": {"name": "Replication Jobs"},
+      "replication_status": {"name": "Replication Status"},
+      "replication_last_sync": {"name": "Replication {job_id} Last Replication"},
+      "replication_next_sync": {"name": "Replication {job_id} Next Replication"},
+      "replication_duration": {"name": "Replication {job_id} Duration"},
       "proxmox_storages": {
         "name": "Хранилища"
       },
@@ -636,6 +651,10 @@
       "name": "Proxmox: Запустить резервное копирование",
       "description": "Резервное копирование выбранных ВМ и/или контейнеров в указанное хранилище.",
       "fields": {
+        "entry_id": {
+          "name": "ID записи PVE",
+          "description": "Необязательный ID записи конфигурации для различения узлов с одинаковыми именами."
+        },
         "node": {
           "name": "Узел",
           "description": "Имя узла (например, server)"
@@ -662,7 +681,7 @@
         },
         "delay_between": {
           "name": "Интервал между копиями",
-          "description": "Секунды ожидания между резервными копиями"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         }
       }
     },
@@ -670,6 +689,10 @@
       "name": "Proxmox: Массовое резервное копирование",
       "description": "Резервное копирование всех ВМ и/или контейнеров на выбранном узле.",
       "fields": {
+        "entry_id": {
+          "name": "ID записи PVE",
+          "description": "Необязательный ID записи конфигурации для различения узлов с одинаковыми именами."
+        },
         "node": {
           "name": "Узел",
           "description": "Имя узла (например, pve)"
@@ -692,7 +715,7 @@
         },
         "delay_between": {
           "name": "Интервал между копиями",
-          "description": "Секунды между резервными копиями (0 = без интервала)"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         },
         "include_vms": {
           "name": "Включать ВМ",
@@ -708,6 +731,10 @@
       "name": "Proxmox: Выключить узел",
       "description": "Запрашивает подтверждение и выключает выбранный узел.",
       "fields": {
+        "entry_id": {
+          "name": "ID записи PVE",
+          "description": "Необязательный ID записи конфигурации для различения узлов с одинаковыми именами."
+        },
         "node": {
           "name": "Узел",
           "description": "Имя узла (например, pve)"
@@ -722,6 +749,10 @@
       "name": "Proxmox: Перезагрузить узел",
       "description": "Запрашивает подтверждение и перезагружает выбранный узел.",
       "fields": {
+        "entry_id": {
+          "name": "ID записи PVE",
+          "description": "Необязательный ID записи конфигурации для различения узлов с одинаковыми именами."
+        },
         "node": {
           "name": "Узел",
           "description": "Имя узла (например, pve)"
@@ -732,15 +763,24 @@
         }
       }
     },
+    "dashboard_preview": {
+      "name": "Dashboard preview",
+      "description": "Return a read-only inventory and static dashboard plan for all Proxmox entries. Does not install or modify dashboards."
+    },
     "wake_node": {
       "name": "Proxmox: Разбудить узел",
       "description": "Будит узел Proxmox через Wake-on-LAN.",
       "fields": {
+        "entry_id": {
+          "name": "ID записи PVE",
+          "description": "Необязательный ID записи конфигурации для различения узлов с одинаковыми именами."
+        },
         "node": {
           "name": "Узел"
         },
         "mac": {
-          "name": "MAC-адрес"
+          "name": "MAC-адрес",
+          "description": "Явно заданный MAC имеет приоритет; иначе используется MAC узла из выбранной записи конфигурации."
         }
       }
     }

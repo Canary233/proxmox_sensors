@@ -79,10 +79,18 @@
     "abort": {
       "already_configured": "This node is already configured.",
       "no_data": "No cluster data received. Check your configuration.",
-      "cluster_no_options": "Cluster settings are managed from the PVE node configuration."
+      "cluster_no_options": "Cluster settings are managed from the PVE node configuration.",
+      "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration."
     }
   },
   "options": {
+    "error": {
+      "guest_discovery_unavailable": "Guest discovery is unavailable. Guest selections will be preserved.",
+      "guest_selection_changed": "Guest selections changed in another Options flow. Reopen Options and try again.",
+      "guest_inventory_changed": "The guest inventory changed. Reopen Options and try again.",
+      "invalid_guest_selection": "Only guests shown for this node can be selected.",
+      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs."
+    },
     "abort": {
       "pbs_no_options": "This PBS server has no configurable options.",
       "cluster_no_options": "Cluster settings are managed from the PVE node configuration.",
@@ -397,6 +405,9 @@
       "node_ksm_shared": {
         "name": "KSM Shared Memory"
       },
+      "node_ksm_status": {
+        "name": "KSM Status"
+      },
       "node_memory_usage": {
         "name": "Memory Usage"
       },
@@ -523,6 +534,24 @@
       "proxmox_node": {
         "name": "Node Status"
       },
+      "sidecar_status": {
+        "name": "Sidecar Status"
+      },
+      "replication_jobs": {
+        "name": "Replication Jobs"
+      },
+      "replication_status": {
+        "name": "Replication Status"
+      },
+      "replication_last_sync": {
+        "name": "Replication {job_id} Last Replication"
+      },
+      "replication_next_sync": {
+        "name": "Replication {job_id} Next Replication"
+      },
+      "replication_duration": {
+        "name": "Replication {job_id} Duration"
+      },
       "proxmox_storages": {
         "name": "Storages"
       },
@@ -636,6 +665,10 @@
       "name": "Proxmox: Start backup",
       "description": "Backup selected VMs and/or containers to the specified storage.",
       "fields": {
+        "entry_id": {
+          "name": "PVE entry ID",
+          "description": "Optional configuration entry ID to distinguish nodes with the same name."
+        },
         "node": {
           "name": "Node",
           "description": "Node name (e.g., server)"
@@ -662,7 +695,7 @@
         },
         "delay_between": {
           "name": "Backup interval",
-          "description": "Seconds to wait between backups"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         }
       }
     },
@@ -670,6 +703,10 @@
       "name": "Proxmox: Mass backup",
       "description": "Backup all VMs and/or containers on the selected node.",
       "fields": {
+        "entry_id": {
+          "name": "PVE entry ID",
+          "description": "Optional configuration entry ID to distinguish nodes with the same name."
+        },
         "node": {
           "name": "Node",
           "description": "Node name (e.g., pve)"
@@ -692,7 +729,7 @@
         },
         "delay_between": {
           "name": "Backup interval",
-          "description": "Seconds between backups (0 = no interval)"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         },
         "include_vms": {
           "name": "Include VMs",
@@ -708,6 +745,10 @@
       "name": "Proxmox: Shutdown node",
       "description": "Requests confirmation and shuts down the selected node.",
       "fields": {
+        "entry_id": {
+          "name": "PVE entry ID",
+          "description": "Optional configuration entry ID to distinguish nodes with the same name."
+        },
         "node": {
           "name": "Node",
           "description": "Node name (e.g., pve)"
@@ -722,6 +763,10 @@
       "name": "Proxmox: Reboot node",
       "description": "Requests confirmation and reboots the selected node.",
       "fields": {
+        "entry_id": {
+          "name": "PVE entry ID",
+          "description": "Optional configuration entry ID to distinguish nodes with the same name."
+        },
         "node": {
           "name": "Node",
           "description": "Node name (e.g., pve)"
@@ -732,15 +777,24 @@
         }
       }
     },
+    "dashboard_preview": {
+      "name": "Dashboard preview",
+      "description": "Return a read-only inventory and static dashboard plan for all Proxmox entries. Does not install or modify dashboards."
+    },
     "wake_node": {
       "name": "Proxmox: Wake node",
       "description": "Wakes a Proxmox node using Wake-on-LAN.",
       "fields": {
+        "entry_id": {
+          "name": "PVE entry ID",
+          "description": "Optional configuration entry ID to distinguish nodes with the same name."
+        },
         "node": {
           "name": "Node"
         },
         "mac": {
-          "name": "MAC address"
+          "name": "MAC address",
+          "description": "Explicit MAC takes priority; otherwise uses the selected entry's configured node MAC."
         }
       }
     }

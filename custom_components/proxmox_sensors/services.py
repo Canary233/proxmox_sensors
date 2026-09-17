@@ -2,6 +2,7 @@
 
 import logging
 import asyncio
+import time
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant, ServiceCall
 
@@ -10,24 +11,106 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-def register_services(hass: HomeAssistant, entry):
+async def _run_vzdump_task(client, hass, node, vmid, storage, mode, compress):
+    """Start a backup and report success only after its UPID reaches a terminal OK state."""
+    accepted = await client.start_vzdump(
+        hass, node=node, vmid=vmid, storage=storage, mode=mode,
+        compress=compress, notes="HA-{{vmid}}, {{guestname}}",
+    )
+    if not isinstance(accepted, str) or not accepted.strip():
+        return vmid, False, {"accepted": accepted, "error": "Invalid task UPID"}
+    waiter = getattr(client, "wait_for_task", None)
+    if waiter is None:
+        return vmid, False, {"upid": accepted, "error": "Task status API unavailable"}
+    try:
+        task = await waiter(hass, accepted)
+    except Exception as err:
+        return vmid, False, {"upid": accepted, "error": str(err)}
+    if not isinstance(task, dict):
+        return vmid, False, {"upid": accepted, "error": "Invalid task result"}
+    return vmid, task.get("status") == "OK", {"upid": accepted, "task": task}
 
-    entry_data = hass.data[DOMAIN][entry.entry_id]
-    client = entry_data["client"]
-    coordinator = entry_data["coordinator"]
-    node = entry.data.get("node", "Proxmox")
-    entry_id = entry.entry_id
+
+def _backup_scheduler(max_concurrent, delay_between):
+    """Coordinate active remote tasks and minimum intervals between their starts."""
+    condition = asyncio.Condition()
+    active = 0
+    last_start = None
+
+    async def acquire():
+        nonlocal active, last_start
+        async with condition:
+            while True:
+                while active >= max_concurrent:
+                    await condition.wait()
+                if last_start is not None:
+                    remaining = delay_between - (time.monotonic() - last_start)
+                    if remaining > 0:
+                        try:
+                            await asyncio.wait_for(condition.wait(), remaining)
+                        except asyncio.TimeoutError:
+                            pass
+                        continue
+                active += 1
+                last_start = time.monotonic()
+                return
+
+    async def release():
+        nonlocal active
+        async with condition:
+            active -= 1
+            condition.notify_all()
+
+    return acquire, release
+
+
+def _resolve_pve_target(hass, data, *, allow_auto=False):
+    """Resolve configured ownership, never cluster visibility or load order."""
+    node = data.get("node")
+    if not node and not allow_auto:
+        raise ValueError("Node is required")
+    entry_id = data.get("entry_id")
+    candidates = []
+    for candidate in hass.config_entries.async_entries(DOMAIN):
+        if candidate.data.get("platform_type") != "PVE":
+            continue
+        if entry_id is not None and candidate.entry_id != entry_id:
+            continue
+        configured_node = candidate.data.get("node")
+        if not configured_node or (node and configured_node != node):
+            continue
+        # Count configured owners before testing runtime availability: an offline
+        # duplicate must not silently redirect a call to a different installation.
+        candidates.append(candidate)
+    if not candidates:
+        raise ValueError("No PVE entry owns the requested node/entry_id")
+    if len(candidates) != 1:
+        raise ValueError("Ambiguous PVE destination; specify node and entry_id")
+    selected = candidates[0]
+    runtime = hass.data.get(DOMAIN, {}).get(selected.entry_id, {})
+    if (not runtime.get("services_ready") or runtime.get("unloading")
+            or not runtime.get("client") or not runtime.get("coordinator")):
+        raise ValueError("The selected PVE entry is not loaded")
+    return selected, runtime, selected.data["node"]
+
+
+def register_services(hass: HomeAssistant, entry=None):
+    """Keep domain services registered; resolve live entry state on every call."""
+    if hass.services.has_service(DOMAIN, "create_vzdump_backup"):
+        return
 
     # ====== SIMPLE / MULTI BACKUP SERVICE ==========
     async def handle_create_vzdump_backup(call: ServiceCall):
-        node = call.data.get("node")
+        selected, entry_data, node = _resolve_pve_target(hass, call.data)
         guests = call.data.get("guests") or call.data.get("vmid")
         storage = call.data.get("storage")
         mode = call.data.get("mode", "snapshot")
         compress = call.data.get("compress", "zstd")
 
-        max_concurrent = call.data.get("max_concurrent", 1)
-        delay_between = call.data.get("delay_between", 0)
+        max_concurrent = int(call.data.get("max_concurrent", 1))
+        delay_between = float(call.data.get("delay_between", 0))
+        if max_concurrent < 1 or delay_between < 0:
+            raise ValueError("max_concurrent must be at least 1 and delay_between cannot be negative")
 
         if not node:
             raise ValueError("Node is required")
@@ -56,36 +139,41 @@ def register_services(hass: HomeAssistant, entry):
 
         success_count = 0
         error_count = 0
+        detailed_results = []
 
-        for idx, vmid in enumerate(targets):
+        acquire, release = _backup_scheduler(max_concurrent, delay_between)
+        async def backup_one(vmid):
+            await acquire()
             try:
                 _LOGGER.info(f"Starting backup of {vmid}...")
-
-                result = await client.start_vzdump(
-                    hass,
-                    node=node,
-                    vmid=vmid,
-                    storage=storage,
-                    mode=mode,
-                    compress=compress,
-                    notes="HA-{{vmid}}, {{guestname}}",
+                _, current, _ = _resolve_pve_target(hass, call.data)
+                if current is not entry_data:
+                    raise ValueError("PVE entry changed during backup request; retry the service")
+                _, success, result = await _run_vzdump_task(
+                    current["client"], hass, node, vmid, storage, mode, compress
                 )
-
-                _LOGGER.info(f"Backup of {vmid} started successfully")
-                success_count += 1
-
-                if delay_between > 0 and idx < len(targets) - 1:
-                    _LOGGER.info(f"Waiting {delay_between}s before next backup...")
-                    await asyncio.sleep(delay_between)
-
+                if not success:
+                    _LOGGER.error(f"Backup of {vmid} did not complete successfully: {result}")
+                return vmid, success, result
             except Exception as e:
-                error_count += 1
                 _LOGGER.error(f"Error in backup of {vmid}: {e}")
+                return vmid, False, str(e)
+            finally:
+                await release()
+
+        results = await asyncio.gather(*(backup_one(vmid) for vmid in targets))
+        for vmid, success, result in results:
+            if success:
+                success_count += 1
+            else:
+                error_count += 1
+            detailed_results.append({"vmid": vmid, "success": success, "detail": result})
 
         _LOGGER.info(
             f"Simple/Multi backup completed. "
             f"Success: {success_count} | Failures: {error_count} | Total: {len(targets)}"
         )
+        return detailed_results
 
     hass.services.async_register(
         DOMAIN, "create_vzdump_backup", handle_create_vzdump_backup
@@ -94,12 +182,14 @@ def register_services(hass: HomeAssistant, entry):
     # =======MASSIVE BACKUP=========
 
     async def handle_backup_all(call: ServiceCall):
-        node = call.data.get("node")
+        selected, entry_data, node = _resolve_pve_target(hass, call.data)
         storage = call.data.get("storage")
         mode = call.data.get("mode", "snapshot")
         compress = call.data.get("compress", "zstd")
-        max_concurrent = call.data.get("max_concurrent", 1)
-        delay_between = call.data.get("delay_between", 30)
+        max_concurrent = int(call.data.get("max_concurrent", 1))
+        delay_between = float(call.data.get("delay_between", 30))
+        if max_concurrent < 1 or delay_between < 0:
+            raise ValueError("max_concurrent must be at least 1 and delay_between cannot be negative")
 
         if not node:
             raise ValueError("Node is required")
@@ -171,37 +261,28 @@ def register_services(hass: HomeAssistant, entry):
             f"Concurrent: {max_concurrent} | Delay: {delay_between}s"
         )
 
-        # Process with concurrency limit using semaphore
-        semaphore = asyncio.Semaphore(max_concurrent)
+        acquire, release = _backup_scheduler(max_concurrent, delay_between)
         results = []
 
         async def backup_with_limit(vmid):
-            async with semaphore:
-                try:
-                    _LOGGER.info(f"Starting backup of {vmid}...")
-                    result = await client.start_vzdump(
-                        hass,
-                        node=node,
-                        vmid=vmid,
-                        storage=storage,
-                        mode=mode,
-                        compress=compress,
-                        notes="HA-{{vmid}}, {{guestname}}",
-                    )
-                    _LOGGER.info(f"Backup of {vmid} started successfully")
-
-                    if delay_between > 0 and vmid != targets[-1]:
-                        _LOGGER.info(f"Waiting {delay_between}s before next backup...")
-                        await asyncio.sleep(delay_between)
-
-                    return (vmid, True, result)
-                except Exception as e:
-                    _LOGGER.error(f"Error in backup of {vmid}: {e}")
-                    return (vmid, False, str(e))
+            await acquire()
+            try:
+                _LOGGER.info(f"Starting backup of {vmid}...")
+                _, current, _ = _resolve_pve_target(hass, call.data)
+                if current is not entry_data:
+                    raise ValueError("PVE entry changed during backup request; retry the service")
+                return await _run_vzdump_task(
+                    current["client"], hass, node, vmid, storage, mode, compress
+                )
+            except Exception as e:
+                _LOGGER.error(f"Error in backup of {vmid}: {e}")
+                return (vmid, False, str(e))
+            finally:
+                await release()
 
         tasks = [backup_with_limit(vmid) for vmid in targets]
         results = await asyncio.gather(
-            *(limited_task(task) for task in tasks),
+            *tasks,
             return_exceptions=True,
         )
 
@@ -257,14 +338,15 @@ def register_services(hass: HomeAssistant, entry):
     # ========SHUTDOWN NODE===========
 
     async def handle_confirm_shutdown(call: ServiceCall):
-        node = call.data.get("node")
+        selected, entry_data, node = _resolve_pve_target(hass, call.data)
         confirm = call.data.get("confirm", False)
 
         if not confirm:
-            notification_id = f"proxmox_shutdown_confirm_{node}"
+            notification_id = f"proxmox_shutdown_confirm_{selected.entry_id}_{node}"
             message = (
                 f"⚠️ **Shutdown node {node}**\n\n"
-                f"To confirm, run this service again with `confirm: true`."
+                f"To confirm, run this service again with `confirm: true`, "
+                f"`node: {node}` and `entry_id: {selected.entry_id}`."
             )
 
             persistent_notification.create(
@@ -273,10 +355,10 @@ def register_services(hass: HomeAssistant, entry):
             return
 
         try:
-            result = await client.shutdown_node(hass, node)
+            result = await entry_data["client"].shutdown_node(hass, node)
             if result:
                 persistent_notification.dismiss(
-                    hass, f"proxmox_shutdown_confirm_{node}"
+                    hass, f"proxmox_shutdown_confirm_{selected.entry_id}_{node}"
                 )
         except Exception as e:
             _LOGGER.error(f"Error shutting down node {node}: {e}")
@@ -288,14 +370,15 @@ def register_services(hass: HomeAssistant, entry):
     # =======REBOOT NODE==========
 
     async def handle_confirm_reboot(call: ServiceCall):
-        node = call.data.get("node")
+        selected, entry_data, node = _resolve_pve_target(hass, call.data)
         confirm = call.data.get("confirm", False)
 
         if not confirm:
-            notification_id = f"proxmox_reboot_confirm_{node}"
+            notification_id = f"proxmox_reboot_confirm_{selected.entry_id}_{node}"
             message = (
                 f"🔄 **Reboot node {node}**\n\n"
-                f"To confirm, run this service again with `confirm: true`."
+                f"To confirm, run this service again with `confirm: true`, "
+                f"`node: {node}` and `entry_id: {selected.entry_id}`."
             )
 
             persistent_notification.create(
@@ -304,9 +387,9 @@ def register_services(hass: HomeAssistant, entry):
             return
 
         try:
-            result = await client.reboot_node(hass, node)
+            result = await entry_data["client"].reboot_node(hass, node)
             if result:
-                persistent_notification.dismiss(hass, f"proxmox_reboot_confirm_{node}")
+                persistent_notification.dismiss(hass, f"proxmox_reboot_confirm_{selected.entry_id}_{node}")
         except Exception as e:
             _LOGGER.error(f"Error rebooting node {node}: {e}")
 
@@ -315,28 +398,9 @@ def register_services(hass: HomeAssistant, entry):
     # ======= WAKE NODE (WOL) ==========
 
     async def handle_wake_node(call: ServiceCall):
-        node = call.data.get("node")
-        mac = call.data.get("mac")
-
-        cluster_nodes = coordinator.data.get("cluster_nodes", [])
-
-        # -------- AUTO NODE (single node setups) --------
-        if not node:
-            if len(cluster_nodes) == 1:
-                node = cluster_nodes[0]
-                _LOGGER.info(f"No node provided, using detected node: {node}")
-            elif cluster_nodes:
-                raise ValueError(
-                    f"Node is required. Available nodes: {', '.join(cluster_nodes)}"
-                )
-            else:
-                raise ValueError("Node is required and no cluster nodes detected yet")
-
-        # -------- VALIDATION --------
-        if cluster_nodes and node not in cluster_nodes:
-            raise ValueError(
-                f"Invalid node '{node}'. Available nodes: {', '.join(cluster_nodes)}"
-            )
+        selected, entry_data, node = _resolve_pve_target(hass, call.data, allow_auto=True)
+        mac = (call.data["mac"] if "mac" in call.data else
+               selected.options.get("wol_macs", {}).get(node))
 
         # -------- MAC VALIDATION --------
         if not mac:

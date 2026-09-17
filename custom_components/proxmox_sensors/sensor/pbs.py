@@ -1,12 +1,16 @@
 """Sensors PBS for Proxmox Extended Sensors."""
 
-from datetime import datetime
+from datetime import datetime, timezone
+import math
+import time
 
 from homeassistant.const import PERCENTAGE, UnitOfInformation
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.util import dt as dt_util
 
 from ..const import DOMAIN
+from ..pbs_devices import pbs_device_identifier, pbs_parent_device
 from .base import ProxmoxPbsBaseSensor
 
 
@@ -17,6 +21,10 @@ def extract_store_from_task(task):
         if "::" in worker_id:
             store = worker_id.split("::")[0]
     return store
+
+
+def _format_utc_timestamp(ts):
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%d/%m/%Y %H:%M:%S")
 
 
 class ProxmoxPBSVersionSensor(ProxmoxPbsBaseSensor):
@@ -77,6 +85,7 @@ class ProxmoxPBSCpuSensor(ProxmoxPbsBaseSensor):
         super().__init__(coordinator, server_id, "node_cpu", None, "%")
         self._attr_translation_key = "pbs_cpu_usage"
         self._attr_icon = "mdi:cpu-64-bit"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         status = self.coordinator.data.get("pbs_node_status", {})
@@ -109,6 +118,7 @@ class ProxmoxPBSRamSensor(ProxmoxPbsBaseSensor):
         super().__init__(coordinator, server_id, "node_ram", None, "%")
         self._attr_translation_key = "pbs_ram_usage"
         self._attr_icon = "mdi:memory"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         status = self.coordinator.data.get("pbs_node_status", {})
@@ -144,6 +154,7 @@ class ProxmoxPBSRamTotalSensor(ProxmoxPbsBaseSensor):
         self._attr_translation_key = "pbs_ram_total"
         self._attr_icon = "mdi:memory"
         self._attr_native_unit_of_measurement = "GB"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         ram = self.coordinator.data.get("pbs_node_status", {}).get("memory", {})
@@ -164,6 +175,7 @@ class ProxmoxPBSRamUsedSensor(ProxmoxPbsBaseSensor):
         self._attr_translation_key = "pbs_ram_used"
         self._attr_icon = "mdi:memory"
         self._attr_native_unit_of_measurement = "GB"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         ram = self.coordinator.data.get("pbs_node_status", {}).get("memory", {})
@@ -184,6 +196,7 @@ class ProxmoxPBSRamFreeSensor(ProxmoxPbsBaseSensor):
         self._attr_translation_key = "pbs_ram_free"
         self._attr_icon = "mdi:memory"
         self._attr_native_unit_of_measurement = "GB"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         ram = self.coordinator.data.get("pbs_node_status", {}).get("memory", {})
@@ -218,6 +231,7 @@ class ProxmoxPBSTaskSensor(ProxmoxPbsBaseSensor):
         """Return device info for tasks."""
         return {
             "identifiers": {(DOMAIN, f"pbs_tasks_{self._server_id}")},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Tasks - {self._server_id.upper()}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Tasks",
@@ -249,6 +263,7 @@ class ProxmoxPBSTaskTypeSensor(ProxmoxPbsBaseSensor):
         """Return device info for tasks."""
         return {
             "identifiers": {(DOMAIN, f"pbs_tasks_{self._server_id}")},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Tasks - {self._server_id.upper()}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Tasks",
@@ -296,7 +311,7 @@ class ProxmoxPBSTaskStatusSensor(ProxmoxPbsBaseSensor):
 
         def format_ts(ts):
             if ts and isinstance(ts, (int, float)):
-                return datetime.fromtimestamp(ts).strftime("%d/%m/%Y %H:%M:%S")
+                return _format_utc_timestamp(ts)
             return ts
 
         return {
@@ -313,6 +328,7 @@ class ProxmoxPBSTaskStatusSensor(ProxmoxPbsBaseSensor):
         """Return device info for tasks."""
         return {
             "identifiers": {(DOMAIN, f"pbs_tasks_{self._server_id}")},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Tasks - {self._server_id.upper()}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Tasks",
@@ -345,6 +361,7 @@ class ProxmoxPBSTaskMessageSensor(ProxmoxPbsBaseSensor):
         """Return device info for tasks."""
         return {
             "identifiers": {(DOMAIN, f"pbs_tasks_{self._server_id}")},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Tasks - {self._server_id.upper()}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Tasks",
@@ -389,6 +406,7 @@ class ProxmoxPBSTaskDurationSensor(ProxmoxPbsBaseSensor):
         """Return device info for tasks."""
         return {
             "identifiers": {(DOMAIN, f"pbs_tasks_{self._server_id}")},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Tasks - {self._server_id.upper()}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Tasks",
@@ -409,6 +427,7 @@ class ProxmoxPBSDatastoreUsageSensor(ProxmoxPbsBaseSensor):
         self._attr_translation_key = "pbs_datastore_usage"
         self._store = store
         self._attr_icon = "mdi:database-clock"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         data = self.coordinator.data.get("pbs_datastores", {}).get(self._store, {})
@@ -419,7 +438,8 @@ class ProxmoxPBSDatastoreUsageSensor(ProxmoxPbsBaseSensor):
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, f"datastore_{self._store}")},
+            "identifiers": {(DOMAIN, pbs_device_identifier("datastore", self._server_id, self._store))},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Datastore: {self._store}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Datastore",
@@ -455,6 +475,8 @@ class ProxmoxPBSDatastoreSizeSensor(ProxmoxPbsBaseSensor):
                 "free": "mdi:database-arrow-down",
             }
             self._attr_icon = icons.get(key, "mdi:database-outline")
+        if key in ("total", "used", "avail"):
+            self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         data = self.coordinator.data.get("pbs_datastores", {}).get(self._store, {})
@@ -463,7 +485,8 @@ class ProxmoxPBSDatastoreSizeSensor(ProxmoxPbsBaseSensor):
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, f"datastore_{self._store}")},
+            "identifiers": {(DOMAIN, pbs_device_identifier("datastore", self._server_id, self._store))},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Datastore: {self._store}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Datastore",
@@ -494,7 +517,8 @@ class ProxmoxPBSDedupSensor(ProxmoxPbsBaseSensor):
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, f"datastore_{self._store}")},
+            "identifiers": {(DOMAIN, pbs_device_identifier("datastore", self._server_id, self._store))},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Datastore: {self._store}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Datastore",
@@ -523,12 +547,13 @@ class ProxmoxPBSLastBackupTimeSensor(ProxmoxPbsBaseSensor):
         ts = last.get("backup-time")
         if not ts:
             return None
-        return datetime.fromtimestamp(ts).strftime("%d/%m/%Y %H:%M:%S")
+        return _format_utc_timestamp(ts)
 
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, f"datastore_{self._store}")},
+            "identifiers": {(DOMAIN, pbs_device_identifier("datastore", self._server_id, self._store))},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Datastore: {self._store}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Datastore",
@@ -559,7 +584,8 @@ class ProxmoxPBSLastBackupSizeSensor(ProxmoxPbsBaseSensor):
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, f"datastore_{self._store}")},
+            "identifiers": {(DOMAIN, pbs_device_identifier("datastore", self._server_id, self._store))},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Datastore: {self._store}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Datastore",
@@ -612,7 +638,8 @@ class ProxmoxPBSLastBackupStatusSensor(ProxmoxPbsBaseSensor):
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, f"datastore_{self._store}")},
+            "identifiers": {(DOMAIN, pbs_device_identifier("datastore", self._server_id, self._store))},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Datastore: {self._store}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Datastore",
@@ -632,6 +659,7 @@ class ProxmoxPBSBackupErrorsSensor(ProxmoxPbsBaseSensor):
         self._attr_translation_key = "pbs_backup_errors"
         self._store = store
         self._attr_icon = "mdi:alert-circle-outline"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         data = self.coordinator.data.get("pbs_datastores", {}).get(self._store, {})
@@ -640,7 +668,8 @@ class ProxmoxPBSBackupErrorsSensor(ProxmoxPbsBaseSensor):
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, f"datastore_{self._store}")},
+            "identifiers": {(DOMAIN, pbs_device_identifier("datastore", self._server_id, self._store))},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Datastore: {self._store}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Datastore",
@@ -660,6 +689,7 @@ class ProxmoxPBSBackupsListSensor(ProxmoxPbsBaseSensor):
         self._attr_translation_key = "pbs_backups_summary"
         self._store = store
         self._attr_icon = "mdi:archive-clock-outline"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
         data = self.coordinator.data.get("pbs_datastores", {}).get(self._store, {})
@@ -680,9 +710,7 @@ class ProxmoxPBSBackupsListSensor(ProxmoxPbsBaseSensor):
                 if key not in summary or b_time > summary[key]["raw_time"]:
                     summary[key] = {
                         "raw_time": b_time,
-                        "last_backup": datetime.fromtimestamp(b_time).strftime(
-                            "%d/%m/%Y %H:%M:%S"
-                        ),
+                        "last_backup": _format_utc_timestamp(b_time),
                     }
 
         return {
@@ -696,11 +724,95 @@ class ProxmoxPBSBackupsListSensor(ProxmoxPbsBaseSensor):
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, f"datastore_{self._store}")},
+            "identifiers": {(DOMAIN, pbs_device_identifier("datastore", self._server_id, self._store))},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Datastore: {self._store}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Datastore",
         }
+
+
+def _pbs_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _pbs_action_task(sensor, action):
+    """Resolve an accepted UPID, or the latest external execution in this PBS."""
+    hass = getattr(sensor, "hass", None)
+    actions = (hass.data if hass else {}).get(DOMAIN, {}).get(
+        sensor.coordinator.config_entry.entry_id, {}
+    ).get("pbs_action_upids", {}).get(sensor._server_id, {}).get(sensor._store, {})
+    upid = actions.get(action)
+    if not isinstance(upid, str) or not upid.startswith("UPID:"):
+        upid = None
+    tasks = sensor.coordinator.data.get("pbs_tasks", [])
+    tasks = [t for t in tasks if isinstance(t, dict)] if isinstance(tasks, list) else []
+    if upid:
+        return upid, next((t for t in tasks if t.get("upid") == upid), None)
+
+    workers = {
+        "gc": {"garbage_collection"},
+        "prune": {"prune", "prunejob"},
+        "verify": {"verify", "verifyjob", "verificationjob"},
+    }[action]
+    candidates = []
+    for task in tasks:
+        worker_id = task.get("worker_id")
+        if task.get("worker_type") not in workers or not isinstance(worker_id, str):
+            continue
+        store = worker_id if action == "gc" else worker_id.split(":", 1)[0]
+        if store == sensor._store and _pbs_number(task.get("starttime")):
+            candidates.append(task)
+    return None, max(candidates, key=lambda t: (t["starttime"], str(t.get("upid", ""))), default=None)
+
+
+def _pbs_execution_state(task, accepted=None):
+    if task is None:
+        return "Iniciado" if accepted else None
+    if task.get("endtime") is None:
+        return "Running"
+    status = task.get("status")
+    if not isinstance(status, str) or not status or status.lower() == "unknown":
+        return None
+    return "OK" if status == "OK" else "Error"
+
+
+def _pbs_execution_attributes(task, accepted=None):
+    attrs = {"upid": accepted} if accepted else {}
+    if task is None:
+        return attrs
+    attrs.update({key: task[key] for key in ("upid", "status", "starttime", "endtime")
+                  if task.get(key) is not None})
+    start, end = task.get("starttime"), task.get("endtime")
+    for value, key in ((start, "started_at"), (end, "last_run")):
+        if _pbs_number(value):
+            try:
+                attrs[key] = dt_util.as_local(dt_util.utc_from_timestamp(value)).isoformat()
+            except (ValueError, OverflowError, OSError):
+                pass
+    finish = time.time() if end is None else end
+    if _pbs_number(start) and _pbs_number(finish) and finish >= start:
+        attrs["duration_sec"] = finish - start
+        attrs["duration_min"] = round((finish - start) / 60, 2)
+    return attrs
+
+
+def _pbs_size(value):
+    """Human-readable binary size; exact bytes remain in a separate attribute."""
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"):
+        if value < 1024 or unit == "EiB":
+            return f"{value:.3f}".rstrip("0").rstrip(".") + f" {unit}"
+        value /= 1024
+
+
+def _pbs_remember_terminal(sensor, accepted, task):
+    """Volatile memory only: never restored or reconstructed after HA restart."""
+    if getattr(sensor, "_accepted_upid", None) != accepted:
+        sensor._accepted_upid = accepted
+        sensor._terminal_task = None
+    if accepted and task is not None and task.get("endtime") is not None and task.get("status"):
+        sensor._terminal_task = dict(task)
+    return getattr(sensor, "_terminal_task", None) or task
 
 
 class ProxmoxPBSMaintenanceSensor(ProxmoxPbsBaseSensor):
@@ -717,54 +829,77 @@ class ProxmoxPBSMaintenanceSensor(ProxmoxPbsBaseSensor):
         self._store = store
         self._attr_icon = "mdi:recycle-variant"
 
-    def _get_value(self):
+    def _execution(self):
+        accepted, task = _pbs_action_task(self, "gc")
         data = self.coordinator.data.get("pbs_gc", {}).get(self._store, {})
-        last_run, pending, removed, processed = (
-            data.get("last-run"),
-            data.get("pending-bytes", 0),
-            data.get("removed-bytes", 0),
-            data.get("processed-bytes", 0),
-        )
+        data = data if isinstance(data, dict) else {}
+        payload_upid = data.get("upid")
+        finished = data.get("last-run-endtime") is not None and bool(data.get("last-run-state"))
+        use_payload = False
+        if accepted:
+            use_payload = payload_upid == accepted and finished
+        elif finished:
+            # The GC endpoint is the primary completed result. A newer task in
+            # the list takes precedence only when its start can be compared.
+            use_payload = task is None or task.get("upid") == payload_upid
+            if task is not None and task.get("upid") != payload_upid:
+                tasks = self.coordinator.data.get("pbs_tasks", [])
+                previous = next((t for t in tasks if isinstance(t, dict)
+                                 and t.get("upid") == payload_upid), None)
+                previous_start = previous.get("starttime") if previous else None
+                end, duration = data.get("last-run-endtime"), data.get("duration")
+                if not _pbs_number(previous_start) and _pbs_number(end) and _pbs_number(duration) and 0 <= duration <= end:
+                    previous_start = end - duration
+                if _pbs_number(previous_start):
+                    use_payload = previous_start > task["starttime"]
+                else:
+                    # No UPID timestamp parsing: retain the endpoint's completed
+                    # result unless the list supplies an active execution.
+                    use_payload = task.get("endtime") is not None
+        if use_payload:
+            same_task = task if task and task.get("upid") == payload_upid else {}
+            task = {**same_task, "upid": payload_upid,
+                    "status": data["last-run-state"], "endtime": data["last-run-endtime"]}
+            task["_gc_payload"] = dict(data)
+        task = _pbs_remember_terminal(self, accepted, task)
+        return accepted, task
 
-        if not any([last_run, pending, removed, processed]):
-            return "No Data"
-
-        tasks = self.coordinator.data.get("pbs_tasks", [])
-        task = tasks[0] if isinstance(tasks, list) and tasks else {}
-        if task.get("worker_type") == "garbage_collection" and not task.get("endtime"):
-            return "Running"
-        if pending > 0:
-            return "Pending"
-        if removed > 0:
-            return "Cleaned"
-
-        return "OK" if last_run else "At Rest"
+    def _get_value(self):
+        accepted, task = self._execution()
+        return _pbs_execution_state(task, accepted)
 
     @property
     def extra_state_attributes(self):
-        data = self.coordinator.data.get("pbs_gc", {}).get(self._store, {})
-        attrs = {}
-
-        last_run = data.get("last-run")
-        if last_run:
-            attrs["last_run"] = datetime.fromtimestamp(last_run).strftime(
-                "%d/%m/%Y %H:%M:%S"
-            )
-
-        for key, attr_name in [
-            ("removed-bytes", "removed_gb"),
-            ("pending-bytes", "pending_gb"),
-            ("processed-bytes", "processed_gb"),
-        ]:
-            val = data.get(key, 0)
-            attrs[attr_name] = round(float(val) / (1024**3), 2) if val else 0.0
-
+        accepted, task = self._execution()
+        attrs = _pbs_execution_attributes(task, accepted)
+        data = task.get("_gc_payload", {}) if task else {}
+        fields = (
+            "index-data-bytes", "index-file-count", "disk-bytes", "disk-chunks",
+            "removed-bytes", "removed-chunks", "pending-bytes", "pending-chunks",
+            "removed-bad", "still-bad",
+        )
+        attrs.update({key.replace("-", "_"): data[key]
+                      for key in fields if data.get(key) is not None})
+        for key, alias in (("index-data-bytes", "index_data_size"),
+                           ("disk-bytes", "disk_size"),
+                           ("removed-bytes", "removed_size"),
+                           ("pending-bytes", "pending_size")):
+            if _pbs_number(data.get(key)) and data[key] >= 0:
+                attrs[alias] = _pbs_size(data[key])
+        duration = data.get("duration")
+        if _pbs_number(duration) and duration >= 0:
+            attrs["duration_sec"] = duration
+            attrs["duration_min"] = round(duration / 60, 2)
+        for key, alias in (("pending-bytes", "pending_gb"), ("removed-bytes", "removed_gb")):
+            if _pbs_number(data.get(key)):
+                attrs[alias] = round(data[key] / (1024**3), 2)
         return attrs
 
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, f"maintenance_{self._store}")},
+            "identifiers": {(DOMAIN, pbs_device_identifier("maintenance", self._server_id, self._store))},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Maintenance: {self._store}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Maintenance",
@@ -785,78 +920,24 @@ class ProxmoxPBSVerifySensor(ProxmoxPbsBaseSensor):
         self._store = store
         self._attr_icon = "mdi:check-decagram"
 
-    def _get_task(self):
-        tasks = self.coordinator.data.get("pbs_tasks", [])
-
-        filtered = []
-
-        for t in tasks:
-            worker = t.get("worker_type", "").lower()
-
-            if "verify" not in worker:
-                continue
-
-            store = extract_store_from_task(t)
-
-            if store and store.lower() == self._store.lower():
-                filtered.append(t)
-
-        if not filtered:
-            return None
-
-        return sorted(filtered, key=lambda x: x.get("endtime", 0), reverse=True)[0]
+    def _execution(self):
+        accepted, task = _pbs_action_task(self, "verify")
+        return accepted, _pbs_remember_terminal(self, accepted, task)
 
     def _get_value(self):
-        task = self._get_task()
-
-        # detect running
-        if task and (task.get("status") == "running" or not task.get("endtime")):
-            return "Running"
-
-        data = self.coordinator.data.get("pbs_datastores", {}).get(self._store, {})
-        last_backup = data.get("last_backup_time")
-
-        last_verify = None
-        if task:
-            last_verify = task.get("endtime")
-
-        if not last_verify:
-            return "Pending"
-
-        if last_backup and last_verify < last_backup:
-            return "Pending"
-
-        return "OK"
+        accepted, task = self._execution()
+        return _pbs_execution_state(task, accepted)
 
     @property
     def extra_state_attributes(self):
-        task = self._get_task()
-
-        if not task:
-            return {}
-
-        from datetime import datetime
-
-        duration = task.get("duration")
-        end = task.get("endtime")
-        status = task.get("status")
-
-        return {
-            "status": status.upper() if isinstance(status, str) else status,
-            "duration_sec": duration,
-            "duration_min": round(duration / 60, 2) if duration else None,
-            "last_run": (
-                datetime.fromtimestamp(end).strftime("%d/%m/%Y %H:%M:%S")
-                if isinstance(end, (int, float))
-                else None
-            ),
-            "upid": task.get("upid"),
-        }
+        accepted, task = self._execution()
+        return _pbs_execution_attributes(task, accepted)
 
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, f"maintenance_{self._store}")},
+            "identifiers": {(DOMAIN, pbs_device_identifier("maintenance", self._server_id, self._store))},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Maintenance: {self._store}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Maintenance",
@@ -877,81 +958,24 @@ class ProxmoxPBSPruneSensor(ProxmoxPbsBaseSensor):
         self._store = store
         self._attr_icon = "mdi:delete-sweep"
 
-    def _get_task(self):
-        tasks = self.coordinator.data.get("pbs_tasks", [])
-
-        filtered = []
-
-        for t in tasks:
-            worker = t.get("worker_type", "").lower()
-
-            if "prune" not in worker:
-                continue
-
-            store = extract_store_from_task(t)
-
-            if store and store.lower() == self._store.lower():
-                filtered.append(t)
-
-        if not filtered:
-            return None
-
-        return sorted(filtered, key=lambda x: x.get("endtime", 0), reverse=True)[0]
+    def _execution(self):
+        accepted, task = _pbs_action_task(self, "prune")
+        return accepted, _pbs_remember_terminal(self, accepted, task)
 
     def _get_value(self):
-        task = self._get_task()
-
-        if not task:
-            return "Idle"
-
-        if task.get("status") == "running" or not task.get("endtime"):
-            return "Running"
-
-        status = task.get("status", "").upper()
-
-        if status == "OK":
-            return "OK"
-
-        return "Error"
+        accepted, task = self._execution()
+        return _pbs_execution_state(task, accepted)
 
     @property
     def extra_state_attributes(self):
-        task = self._get_task()
-
-        if not task:
-            return {}
-
-        from datetime import datetime
-        import time
-
-        start = task.get("starttime")
-        end = task.get("endtime")
-        status = task.get("status")
-
-        duration = None
-
-        if start and end:
-            duration = int(end - start)
-        elif start and not end:
-            # tarea en curso
-            duration = int(time.time() - start)
-
-        return {
-            "status": status.upper() if isinstance(status, str) else status,
-            "duration_sec": duration,
-            "duration_min": round(duration / 60, 2) if duration else 0,
-            "last_run": (
-                datetime.fromtimestamp(end).strftime("%d/%m/%Y %H:%M:%S")
-                if isinstance(end, (int, float))
-                else None
-            ),
-            "upid": task.get("upid"),
-        }
+        accepted, task = self._execution()
+        return _pbs_execution_attributes(task, accepted)
 
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, f"maintenance_{self._store}")},
+            "identifiers": {(DOMAIN, pbs_device_identifier("maintenance", self._server_id, self._store))},
+            "via_device_id": pbs_parent_device(self.coordinator),
             "name": f"Maintenance: {self._store}",
             "manufacturer": "Proxmox",
             "model": "Backup Server Maintenance",

@@ -1,349 +1,216 @@
-# 📚 Documentación y Guías
+# 📚 Proxmox Extended Sensors V5 — Documentación
 
-Estas guías cubren los pasos necesarios para configurar correctamente la integración y aprovechar todas sus funcionalidades.
+Esta documentación cubre la instalación, preparación de Proxmox, autenticación, configuración de Home Assistant, monitorización de hardware y solución de problemas de **Proxmox Extended Sensors V5**.
 
----
+## Guías
 
-## 🌡️ [01. Configuración de Sensores de Hardware](01-install-sensors.md)
-Cómo instalar y configurar **lm-sensors** en tu nodo Proxmox para habilitar el monitoreo de temperatura y ventiladores.
+- 🌡️ [01. Configuración de sensores de hardware](01-install-sensors.md)
+- 🔐 [02. Usuario y permisos de Proxmox](02-proxmox-config.md)
+- 🔌 [03. Configuración en Home Assistant — PVE, PBS y CLUSTER](03-login-pve-pbs.md)
+- ❓ [04. Preguntas frecuentes y solución de problemas](04-faq.md)
 
----
-
-## 🔑 [02. Configuración de Proxmox](02-proxmox-config.md)
-Cómo crear un **usuario** y un **API Token** seguros en Proxmox (PVE y PBS) con los permisos mínimos necesarios.
-
----
-
-## ⚙️ [03. Inicio de Sesión de la Integración (PVE y PBS)](03-login-pve-pbs.md)
-Guía paso a paso para conectar la integración con tus servidores desde Home Assistant.
+[⬅ Volver al README principal](../../README.md)
 
 ---
 
-## ❓ [04. Preguntas Frecuentes y Solución de Problemas](04-faq.md)
-Problemas comunes, dudas frecuentes y cómo resolverlos.
+## 🚀 Novedades de V5
+
+V5 mantiene las funciones de monitorización y control de versiones anteriores e introduce una arquitectura más resistente y una identidad estable de las entidades durante operaciones reales de Proxmox.
+
+### 🔄 Identidad de VM y LXC resistente a migraciones
+
+Las entidades de VM y LXC se identifican a nivel de clúster. Cuando un guest migra entre nodos Proxmox, Home Assistant mantiene la misma identidad lógica en lugar de crear entidades nuevas.
+
+Esto está diseñado para conservar:
+
+- `unique_id`
+- `entity_id`
+- historial y estadísticas
+- dashboards
+- automatizaciones
+- controles del guest
+
+### 🛡️ Resistencia a fallos parciales
+
+Los datos de PVE, PBS y CLUSTER se actualizan en secciones independientes. Si una parte de la API falla temporalmente, los datos no relacionados pueden seguir actualizándose y, cuando es posible, se conservan los últimos valores válidos de la sección afectada.
+
+### 🔁 Monitorización nativa de replicación PVE
+
+V5 añade estado global de replicación a nivel de clúster y entidades por job como:
+
+- Duración
+- Última replicación
+- Próxima replicación
+
+La identidad del job de replicación permanece estable aunque el guest migre a otro nodo.
+
+### 🗄️ Monitorización ampliada del mantenimiento PBS
+
+Las acciones de mantenimiento PBS incluyen:
+
+- Garbage Collection (GC)
+- Prune
+- Verify
+- Sync
+
+**Prune, Verify y Sync ejecutan los Jobs configurados en PBS. Garbage Collection (GC) se ejecuta directamente sobre el datastore.**
+
+Las acciones iniciadas desde Home Assistant se correlacionan con el UPID exacto de la tarea PBS, permitiendo seguir su estado real desde el inicio hasta su finalización.
+
+### 🧩 Identidad multi-PBS
+
+Pueden coexistir varios servidores PBS sin mezclar estados de mantenimiento ni acciones de datastore. V5 asigna identidades persistentes a los servidores PBS y los mantiene aislados dentro de Home Assistant.
+
+### ❤️ Sidecar Status
+
+Cada nodo PVE expone un sensor de diagnóstico **Sidecar Status** que resume el estado de los endpoints del sidecar utilizados para:
+
+- Memoria
+- Montajes
+- Sensores
+- SMART
+
+### 📊 Nuevos sensores porcentuales
+
+V5 añade:
+
+- Porcentaje de memoria de CT
+- Porcentaje de disco de CT
+- Porcentaje de memoria de VM
+
+El porcentaje de disco de VM no se expone porque actualmente no existe una métrica de origen suficientemente fiable.
 
 ---
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Javisen/proxmox_sensors/main/img/logo_int_v4.png" alt="Proxmox Extended Sensors Logo" width="600"/>
-</p>
+## 🎨 Dashboard dinámico de Proxmox
+
+V5 incluye un sistema opcional de dashboards Lovelace para **PVE, PBS y CLUSTER**.
+
+El dashboard se genera a partir de las entidades y recursos realmente disponibles en tu instalación de Home Assistant, por lo que no se ofrecen dashboards vacíos para tipos de servidor que no estén presentes.
+
+### Requisitos
+
+- Proxmox Extended Sensors V5
+- [Card Mod](https://github.com/thomasloven/lovelace-card-mod)
+
+### Instalación del dashboard
+
+1. Instala **Card Mod** desde HACS si todavía no lo tienes.
+2. Añade este recurso Lovelace como **Módulo JavaScript**:
+
+   ```text
+   /proxmox_sensors/proxmox-dashboard.js
+   ```
+
+3. Recarga el navegador.
+4. Crea un nuevo dashboard y selecciona la estrategia de comunidad **Proxmox Extended Sensors**.
+5. Elige uno de los tipos disponibles para tu instalación: **PVE**, **PBS** o **CLUSTER**.
+
+El dashboard seguirá siendo gestionado por la estrategia hasta que utilices la opción **Tomar el control (Take Control)** de Home Assistant. Después podrás editarlo como cualquier dashboard Lovelace normal.
+
+> El dashboard es opcional. La integración funciona normalmente sin instalarlo.
 
 ---
 
-# 🚀 Proxmox Extended Sensors
+## 🌐 Monitorización PVE y CLUSTER
 
-## Introducción
+Dependiendo del tipo de servidor configurado y de los datos disponibles, la integración puede exponer información de:
 
-**Proxmox Extended Sensors es una integración para Home Assistant diseñada para proporcionar monitorización avanzada y control completo de Proxmox VE y Proxmox Backup Server (PBS).**
-
-A diferencia de soluciones basadas únicamente en métricas, esta integración introduce un enfoque centrado en **información útil (insight)**, permitiendo entender no solo qué está ocurriendo en el sistema, sino también cómo está funcionando realmente.
-
-Proporciona visibilidad completa de la infraestructura y añade capacidades de control directo sobre nodos, máquinas virtuales, contenedores, almacenamiento y servicios de backup.
-
----
-
-## 🧠 System Insight (V3/V4)
-
-A partir de la versión 3, la integración evolucionó desde una colección de métricas técnicas hacia un sistema de observabilidad orientado a infraestructura.
-
-V4 introduce sensores capaces de interpretar el estado global del nodo y transformar métricas complejas en información útil y accionable:
-
-- **Proxmox Node** → estado global del nodo (`Excellent`, `Warning`, `Critical`, etc.) con atributos enriquecidos de infraestructura  
-- **Node Score** → evaluación numérica del rendimiento y salud general del sistema  
-- **Load Average (1m / 5m / 15m)** → carga real del host  
-- **IO Wait** → detección de presión y saturación de disco  
-- **Uso de CPU por núcleo** → disponible para nodos, VMs y contenedores  
-- **Telemetría de red del nodo** → cálculo inteligente de tráfico RX/TX agregado desde VMs y CTs  
-- **Información avanzada de almacenamiento** → estado, capacidad y métricas detalladas de discos físicos y storages  
-
-Estos sensores permiten detectar cuellos de botella, identificar degradación del sistema y construir automatizaciones mucho más inteligentes sin necesidad de herramientas externas adicionales.
+- nodos Proxmox
+- salud y quórum del clúster
+- CPU, RAM, carga e I/O wait
+- red RX/TX
+- KSM
+- storages y discos montados
+- discos físicos y SMART
+- temperaturas de hardware
+- máquinas virtuales
+- contenedores LXC
+- tareas fallidas
+- jobs de backup y salud de backups
+- replicación PVE
 
 ---
 
-## 🔍 Capacidades principales de V4
+## 🖥️ Máquinas virtuales y contenedores
 
-- Monitorización global de clúster Proxmox  
-- Detección avanzada de discos montados (CIFS/NFS/local)  
-- Telemetría inteligente de red y almacenamiento  
-- Sensores agregados de salud e infraestructura  
+Los dispositivos VM y LXC pueden exponer estado, uptime, CPU, memoria, tráfico de red y otra información del guest disponible a través de Proxmox.
 
-### Monitorización completa de:
+V5 también controla el estado esperado de arranque (`onboot`) y mantiene estable la identidad del guest durante las migraciones entre nodos.
 
-- Nodos  
-- Máquinas virtuales (QEMU)  
-- Contenedores (LXC)  
-- Discos y almacenamiento  
-- Proxmox Backup Server (PBS)  
-
-### Funcionalidades avanzadas
-
-- Acciones de control desde Home Assistant  
-- Servicios de backup integrados  
-- Compatibilidad total con PBS (incluyendo deduplicación)  
-- Autenticación segura mediante tokens  
-- Estructura limpia y consistente de entidades  
-- Actualizaciones optimizadas y bajo consumo de recursos  
+Los controles de guest se exponen como entidades de botón de Home Assistant cuando la acción correspondiente está disponible.
 
 ---
 
-## 🧩 Versiones Soportadas
+## 💾 Servicios de backup
 
-- Proxmox VE 7.x / 8.x / 9.x
-- Compatible con Linux Kernel 6.x / 7.x
-- Proxmox Backup Server 3.x / 4.x
-- Home Assistant 2024.x o posterior
+La integración proporciona servicios de Home Assistant para realizar backups de guests de Proxmox VE.
 
----
+### `create_vzdump_backup`
 
-## 📑 Tabla de Contenidos
+- Admite uno o varios IDs de guest.
+- Utiliza la ejecución nativa de backups de Proxmox.
+- Admite destinos de almacenamiento local, de red y PBS disponibles para PVE.
 
-- [Características Clave](#-características-clave-v400)
-- [Estado y Rendimiento del Nodo](#-estado-y-rendimiento-del-nodo)
-- [Discos y SMART](#-discos-y-smart)
-- [Máquinas Virtuales (QEMU)](#-máquinas-virtuales-qemu)
-- [Contenedores (LXC)](#-contenedores-lxc)
-- [Servicios de Backup](#-servicios-de-backup-vms-y-cts)
-- [Proxmox Backup Server (PBS)](#-proxmox-backup-server-pbs)
-- [Acciones de Control (PVE y PBS)](#-acciones-de-control-pve-y-pbs)
-- [Instalación](#-instalación)
-- [Guía Visual de Configuración](#-guía-visual-de-configuración)
-- [Contribuciones](#-contribuciones-y-comunidad)
+### `backup_all`
+
+- Realiza backup de los guests seleccionados de un nodo.
+- Admite concurrencia y retardos configurables.
+- Puede utilizarse desde automatizaciones de Home Assistant.
 
 ---
 
-## 🔥 Características Clave de V4
+## 🗄️ Proxmox Backup Server
 
-### ⚙️ Configuración Mejorada
+La monitorización PBS incluye uso del datastore, información de backups, datos de deduplicación, estado de tareas e información de mantenimiento expuesta por la API de PBS.
 
-- Descubrimiento automático de nodos  
-- Selección manual opcional  
-- Configuración más simple y guiada  
-- Compatibilidad con API Tokens (PVE/PBS)  
-- Detección inteligente de permisos limitados  
-
----
-
-### 🌐 Monitorización de Clúster (NUEVO)
-
-- Sensores globales del clúster Proxmox  
-- Estado de backups y tareas fallidas  
-- Nodos online/offline  
-- Uso agregado de CPU y RAM  
-- Conteo global de VMs y CTs  
-
----
-
-### 💽 Discos Montados y Almacenamiento (NUEVO)
-
-- Detección automática de discos montados  
-- Compatibilidad con CIFS / SMB y NFS  
-- Sensores de integridad y mounts faltantes  
-- Exclusión inteligente de tmpfs y pseudo-mounts  
-- Métricas detalladas de uso y capacidad  
-
----
-
-### 🌡️ Monitorización Avanzada de Hardware
-
-- Temperaturas en tiempo real (CPU, VRM, chipset, discos)  
-- Sensores de ventiladores y voltajes  
-- Filtrado inteligente de sensores válidos  
-- Sensores unificados de temperatura (CPU + NVMe)  
-- Compatibilidad avanzada Intel / AMD / ACPI / NVMe 
-
-> Requiere `lm-sensors` en el host Proxmox
-
----
-
-### 🧠 Estado y Rendimiento del Nodo
-
-- CPU, RAM, uptime, kernel y versión de PVE  
-- Monitorización de red (RX/TX)  
-- Tareas y estado del sistema  
-- Métricas avanzadas de carga y rendimiento  
-- Node Score y estado global de infraestructura  
-
----
-
-### 💾 Discos y SMART
-
-- Sensores agrupados por disco físico  
-- Espacio total/usado y métricas avanzadas  
-- Atributos SMART (HDD, SSD, NVMe)  
-- Temperaturas por tipo de disco  
-- Métricas NVMe avanzadas y estado de salud  
-
----
-
-### 🖥️ Máquinas Virtuales (QEMU)
-
-- Estado, CPU, memoria y disco  
-- Red RX/TX  
-- Información básica y uptime  
-- Uso de CPU por núcleo  
-- Acciones de control desde Home Assistant  
-
----
-
-### 📦 Contenedores (LXC)
-
-- Estado, CPU, memoria y disco  
-- Red RX/TX  
-- Información básica y uptime  
-- Uso de CPU por núcleo  
-- Acciones de control desde Home Assistant  
-
----
-
-## 💾 Servicios de Backup (VMs y CTs)
-
-La integración permite crear backups directamente desde Home Assistant, totalmente compatibles con Proxmox VE y PBS.
-
-### 🟦 Backup Individual
-
-- Soporta múltiples IDs (coma separada)  
-- Modos: snapshot / suspend / stop  
-- Compresión: zstd / gzip / lzo / none  
-- Compatible con PBS y deduplicación  
-
-### 🟩 Backup Masivo
-
-- Backup de todos los recursos de un nodo  
-- Control de concurrencia y tiempos  
-- Ideal para automatización  
-- Compatible con grandes infraestructuras  
-
-Los backups se nombran automáticamente como:
-
-```text
-HA-{{vmid}}-{{guestname}}
-```
-
-Totalmente compatibles con PBS, incluyendo deduplicación y cadenas existentes.
-
----
-
-## 🗄️ Proxmox Backup Server (PBS)
-
-Monitorización avanzada de datastore y tareas:
-
-- Uso total, libre y porcentaje  
-- Ratio de deduplicación  
-- Estado del último backup  
-- Errores y resumen de tareas  
-- Estado del Garbage Collector  
-- Información detallada de tareas  
-
----
-
-## 🎛️ Acciones de Control (PVE & PBS)
-
-**Nodo:**
-- Apagar / Reiniciar / Wake-on-LAN  
-
-**Máquinas virtuales:**
-- Start / Stop / Shutdown / Reboot / Reset  
-- Pause / Resume / Hibernate  
-
-**Contenedores:**
-- Start / Stop / Shutdown / Reboot  
-
-**PBS:**
-- Garbage Collector  
-- Prune  
-- Verify  
-- Sync  
-
----
-
-## 🎨 Organización y estructura
-
-- Sensores agrupados automáticamente en:
-  1. Cluster
-  2. Nodo
-  3. Discos físicos
-  4. Máquinas virtuales
-  5. Contenedores
-  6. Almacenamiento / Datastores
-  7. PBS y tareas
-
-- Nombres consistentes y claros para facilitar dashboards y automatizaciones  
+V5 mejora el seguimiento del mantenimiento correlacionando las acciones con sus tareas PBS reales en lugar de considerar que una petición POST aceptada equivale a una tarea finalizada.
 
 ---
 
 ## 🧩 Instalación
 
-### 🔹 Via HACS (recomendado)
+### Mediante HACS — recomendado
 
-1. Abrir **HACS → Integraciones**  
-2. Añadir repositorio personalizado  
-3. Buscar **Proxmox Extended Sensors**  
-4. Instalar y reiniciar Home Assistant  
-5. Añadir la integración desde ajustes  
+[![Abre tu instancia de Home Assistant y Proxmox Extended Sensors en HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Javisen&repository=proxmox_sensors&category=integration)
 
-### 🔹 Instalación manual
+**Proxmox Extended Sensors está incluido en el repositorio predeterminado de HACS. No es necesario añadir un repositorio personalizado.**
 
-1. Copiar en `/config/custom_components/proxmox_sensors`  
-2. Reiniciar Home Assistant  
-3. Añadir la integración  
+1. Abre **HACS → Integraciones**.
+2. Busca **Proxmox Extended Sensors**.
+3. Descarga la integración.
+4. Reinicia Home Assistant.
+5. Ve a **Ajustes → Dispositivos y servicios → Añadir integración**.
+6. Busca **Proxmox Extended Sensors**.
 
----
+Continúa con [03. Configuración en Home Assistant — PVE, PBS y CLUSTER](03-login-pve-pbs.md).
 
-## 🧭 Guía Visual de Configuración
+### Instalación manual
 
-A continuación encontrarás un recorrido visual completo del proceso de configuración, incluyendo métodos de acceso, selección de recursos y pasos de instalación.
+Copia la integración en:
 
-<details>
-  <summary>🪪 Conexión con el Servidor</summary>
-  <p align="center">
-    <img src="../../img/install/setup_pve_1.png" alt="Conexión Proxmox" width="600">
-  </p>
-  <p align="center"><i>No es necesario incluir "http://" o "https://". Se gestiona automáticamente.</i></p>
-</details>
+```text
+/config/custom_components/proxmox_sensors
+```
 
-<details>
-  <summary>🪪 Inicio de sesión con Usuario y Contraseña (solo PVE)</summary>
-  <p align="center">
-    <img src="../../img/install/access_passw.png" alt="Login usuario y contraseña" width="600">
-  </p>
-  <p align="center"><i>Asegúrate de usar el realm correcto (`pam` o `pve`).</i></p>
-</details>
-
-<details> 
-  <summary>🪪 Inicio de sesión con Usuario y Token (PVE y PBS)</summary>
-  <p align="center">
-    <img src="../../img/install/access_token.png" alt="Login con token" width="600">
-  </p>
-  <p align="center"><i>En el campo Token_id solo debes introducir el nombre del token.</i></p>
-</details>
-
-<details>
-  <summary>🧠 Selección de Nodos (V4)</summary>
-  <p align="center">
-    <img src="../../img/install/node_select.png" alt="Selección de nodos" width="600">
-  </p>
-  <p align="center"><i>Selecciona los nodos detectados automáticamente o define manualmente cuáles incluir.</i></p>
-</details>
-
-<details>
-  <summary>⚙️ Selección de Recursos</summary>
-  <p align="center">
-    <img src="../../img/install/resources_select.png" alt="Selección de recursos" width="600">
-  </p>
-  <p align="center"><i>Selecciona los CTs, VMs y storages que deseas incluir, junto con las opciones correspondientes.</i></p>
-</details>
+Después reinicia Home Assistant y añade la integración desde **Ajustes → Dispositivos y servicios**.
 
 ---
 
-**Si esta integración te resulta útil, considera dejar una ⭐ en GitHub.**
+## 🧩 Entornos compatibles
+
+El proyecto es compatible con instalaciones modernas de Proxmox VE, Proxmox Backup Server y Home Assistant. Las versiones mínimas exactas deberán comprobarse con las notas de la versión actual antes de la publicación.
 
 ---
 
-## 🤝 Contribuciones y Comunidad
+## 🤝 Contribuciones y comunidad
 
-Las contribuciones son bienvenidas. Puedes abrir issues o pull requests.  
-Repositorio: https://github.com/Javisen/proxmox_sensors
+Puedes abrir issues y pull requests en el repositorio oficial:
+
+https://github.com/Javisen/proxmox_sensors
+
+Si la integración te resulta útil, considera dejar una ⭐ en GitHub.
 
 ---
 
-<p align="center"><i>Mantenido por Javisen - Licencia MIT</i></p>
+<p align="center"><i>Mantenido por Javisen — Licencia MIT</i></p>

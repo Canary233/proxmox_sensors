@@ -1,41 +1,10 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Javisen/proxmox_sensors/main/img/logo_int_v4.png" alt="Proxmox Extended Sensors Logo" width="600"/>
+  <img src="https://raw.githubusercontent.com/Javisen/proxmox_sensors/main/img/logo_int.png" alt="Proxmox Extended Sensors Logo" width="600"/>
 </p>
 
-> **The most robust and detailed monitoring & control system for Proxmox VE & PBS in Home Assistant.**
+> **Advanced Proxmox VE & PBS monitoring, control and dashboard integration for Home Assistant.**
 
-# 🚀 Proxmox Extended Sensors (v4)
-
-## 🚀 Introduction
-
-**Proxmox Extended Sensors v4** is a complete evolution of the original integration, re-engineered from the ground up to provide industrial-grade stability and the deepest system insights available for Home Assistant.
-
-Building on the breakthrough of V3, where the focus shifted from raw metrics to meaningful, interpreted information, V4 continues to deliver high-value sensors like Node Score and Node Status (Excellent/Warning). These allow you to understand your system's health at a single glance—perfect for smart automations and clean dashboards—without needing to analyze individual sensors one by one.
-
-To support this intelligence, V4 introduces a high-performance asynchronous architecture, utilizing semaphores and optimized coordinators. This ensures your Home Assistant remains responsive and stable, even when managing large clusters or complex hardware. It is no longer just a set of sensors; it is a professional management bridge for your homelab.
-
----
-
-## 🔍 V4 Key Capabilities
-
-*   **[NEW] Cluster-Wide Monitoring:** Centralized sensors for the entire Proxmox cluster state (backups, failed tasks, nodes online).
-*   **[NEW] Advanced Mounted Disks:** Real-time detection of local disks, CIFS, and NFS mounts with detailed usage attributes.
-*   **Deep Hardware Insight:** Specialized support for NVMe (SMART/Temp) and CPU thermal zones (Intel/AMD/ACPI).
-*   **high-stability architecture:** Asynchronous core with concurrency control (Semaphores) to prevent API saturation.
-*   **Secure Authentication:** Mandatory API Token support for PBS and flexible Auth for PVE.
-*   **Intelligent Backups:** Fully integrated services for single or massive backups, compatible with PBS deduplication.
-
----
-
-## 🧠 Why V4?
-The v4 upgrade shifts the focus toward **Infrastructure Reliability**:
-
-*   **Zero-Lag Performance:** Correct `async/await` implementation avoids event loop blocking.
-*   **Entity Persistence:** Re-designed Unique IDs ensure sensors survive reboots and cluster changes.
-*   **Hardware Diversity:** Clean naming logic that adapts to heterogeneous hardware without duplicating entities.
-*   **Smarter Automations:** High-precision attributes for disk pressure (IO Wait) and thermal margins.
-
----
+# 🚀 Proxmox Extended Sensors (v5)
 
 ## 📚 Documentation & Guides
 
@@ -50,133 +19,450 @@ The v4 upgrade shifts the focus toward **Infrastructure Reliability**:
 [![Nederlands](https://img.shields.io/badge/NEDERLANDS-orange?style=for-the-badge&logo=translate&logoColor=white)](docs/nl/README.md)
 [![Português](https://img.shields.io/badge/PORTUGU%C3%8AS-green?style=for-the-badge&logo=translate&logoColor=white)](docs/pt/README.md)
 [![Русский](https://img.shields.io/badge/%D0%A0%D0%A3%D0%A1%D0%A1%D0%9A%D0%98%D0%99-lightgrey?style=for-the-badge&logo=translate&logoColor=white)](docs/ru/README.md)
-[![Українська](https://img.shields.io/badge/%D0%A0%D0%A3%D0%A1%D0%A1%D0%9A%D0%98%D0%99-yellow?style=for-the-badge&logo=translate&logoColor=white)](docs/uk/README.md)
+[![Українська](https://img.shields.io/badge/%D0%A3%D0%9A%D0%A0%D0%90%D0%87%D0%9D%D0%A1%D0%AC%D0%9A%D0%90-yellow?style=for-the-badge&logo=translate&logoColor=white)](docs/uk/README.md)
+
+---
+
+## 📑 Table of Contents
+
+- [Introduction](#-introduction)
+- [What's New in V5](#-whats-new-in-v5)
+- [Dynamic Proxmox Dashboard](#-dynamic-proxmox-dashboard)
+- [Migration-Safe VM & LXC Monitoring](#-migration-safe-vm--lxc-monitoring)
+- [Resilient Monitoring & Fault Isolation](#-resilient-monitoring--fault-isolation)
+- [PVE Replication Status](#-pve-replication-status)
+- [Proxmox Backup Server (PBS)](#-proxmox-backup-server-pbs)
+- [Multi-PBS Support](#-multi-pbs-support)
+- [Sidecar Status](#-sidecar-status)
+- [Cluster Monitoring](#-cluster-monitoring)
+- [Mounted Disks & Network Storage](#-mounted-disks--network-storage)
+- [Hardware & Node Monitoring](#-hardware--node-monitoring)
+- [Virtual Machines & Containers](#-virtual-machines--containers)
+- [Backup Services](#-backup-services-vms--cts)
+- [Supported Versions](#-supported-versions)
+- [Installation](#-installation)
+
+---
+
+## 🚀 Introduction
+
+**Proxmox Extended Sensors v5** is the next major evolution of the integration, focused on resilience, stable entity identity, cluster-aware guest tracking and a much richer Home Assistant experience.
+
+V5 keeps the detailed monitoring introduced in previous versions while making the integration safer during real-world events such as VM/LXC migrations, temporary API failures, PBS maintenance tasks and replication changes.
+
+It also introduces an optional **dynamic Lovelace dashboard for PVE, PBS and CLUSTER**, generated from the resources that actually exist in your Home Assistant installation. The dashboard gives you a complete starting point and can later be customized using Home Assistant's **Take Control** feature.
+
+---
+
+## ✨ What's New in V5
+
+- 🔄 **Migration-safe VM/LXC identity** — guests keep their Home Assistant identity when moving between Proxmox nodes.
+- 🛡️ **Partial-failure resilience** — valid data is preserved when only one API section or subsystem fails.
+- 🔁 **Native PVE Replication monitoring** — global replication status plus per-job runtime information.
+- 🗄️ **Improved PBS maintenance actions** — GC, Prune, Verify and Sync tracking with exact UPID correlation.
+- 🧩 **Stable multi-PBS identity** — multiple PBS servers remain isolated without entity collisions.
+- ❤️ **Sidecar Status** — one diagnostic entity per PVE node reports the health of Memory, Mounts, Sensors and SMART sidecar endpoints.
+- 📊 **New percentage sensors** — CT memory, CT disk and VM memory percentages.
+- 🎨 **Dynamic Proxmox Dashboard** — PVE, PBS and CLUSTER dashboards generated from the resources actually available.
+- 🧱 **Future-ready Device Registry support** — updated relationship handling for upcoming Home Assistant changes.
+  
+> [!CAUTION]
+> **Upgrading from a previous version?**  
+> Update the sidecar script and restart its service on **every PVE node**. This is required for the new KSM Status sensor and to keep the sidecar endpoints aligned with V5.
+
+<details>
+<summary>Update <code>pve-sensors-api.py</code></summary>
+
+```bash
+wget https://raw.githubusercontent.com/Javisen/proxmox_sensors/main/scripts/pve-sensors-api.py -O /usr/local/bin/pve-sensors-api.py
+chmod +x /usr/local/bin/pve-sensors-api.py
+systemctl restart pve-sensors.service
+```
+
+</details>
+
+
+<details>
+<summary><b>🔎 More about the V5 reliability architecture</b></summary>
+
+V5 isolates API work into independent tasks with individual timeouts and controlled concurrency. A failure in one section no longer needs to invalidate unrelated data.
+
+The integration preserves the last valid values for affected sections and automatically returns to fresh data when communication is restored. This behavior applies across PVE node data, hardware, storage, VM/LXC information, PBS sections and CLUSTER metadata.
+
+Guest discovery is cluster-aware, allowing VM and LXC entities to follow their guest between nodes without creating replacement entities or losing Home Assistant history.
+
+</details>
+
+---
+
+## 🎨 Dynamic Proxmox Dashboard
+
+V5 adds an optional dashboard system that builds a complete Lovelace starting point from the entities and resources discovered in your installation.
+
+### Available dashboard types
+
+- **PVE** — node health, temperatures, node information, storage, CTs, VMs, diagnostics and replication.
+- **PBS** — server health, datastores, backup information, maintenance, tasks and actions.
+- **CLUSTER** — cluster health, resources, system state, backup health and replication.
+
+Only dashboard types backed by real resources are offered. The integration never creates an empty PVE, PBS or CLUSTER dashboard.
+
+### Why use it?
+
+- No need to design the entire Proxmox dashboard from scratch.
+- Uses the resources actually discovered in your installation.
+- Keeps PVE, PBS and CLUSTER logically separated.
+- Built on Lovelace so it remains part of the normal Home Assistant dashboard system.
+- You can use **Take Control** and then move, remove or add cards exactly as you would in any other Lovelace dashboard.
+
+> The dashboard is completely optional. Proxmox Extended Sensors works normally without installing it.
+
+<details>
+<summary><b>📦 Dashboard requirements & installation</b></summary>
+
+### Requirements
+
+- Proxmox Extended Sensors v5
+- [Card Mod](https://github.com/thomasloven/lovelace-card-mod)
+
+### Installation
+
+1. Install **Card Mod** from HACS if it is not already installed.
+2. Add the following Lovelace resource as a **JavaScript Module**:
+
+   ```text
+   /proxmox_sensors/proxmox-dashboard.js
+   ```
+
+3. Reload the browser.
+4. Create a new dashboard from **Settings → Dashboards → Add dashboard → Community**.
+5. Select **Proxmox Extended Sensors**.
+6. Choose one of the dashboard types offered for your installation: **PVE**, **PBS** or **CLUSTER**.
+
+The generated dashboard remains strategy-driven until you choose **Take Control**.
+
+</details>
+
+<details>
+<summary><b>🛠️ What happens when I use Take Control?</b></summary>
+
+Home Assistant converts the generated dashboard into a normal editable Lovelace configuration.
+
+From that point you can reorganize the layout, remove cards, add your own entities and combine Proxmox information with anything else in Home Assistant.
+
+The integration does not overwrite a dashboard that you have taken control of.
+
+</details>
+
+
+
+## 📸 Dashboard screenshots
+
+<details>
+<summary><b>PVE</b></summary>
+
+<br>
+<img src="https://github.com/Javisen/test_javisen/raw/refs/heads/main/img/Dashb_Node.png" alt="PVE dashboard" width="100%">
+
+</details>
+
+<details>
+<summary><b>PBS</b></summary>
+
+<br>
+<img src="https://github.com/Javisen/test_javisen/raw/refs/heads/main/img/Dashb_PBS.png" alt="PBS dashboard" width="100%">
+
+</details>
+
+<details>
+<summary><b>CLUSTER</b></summary>
+
+<br>
+<img src="https://github.com/Javisen/test_javisen/raw/refs/heads/main/img/Dashb_Cluster.png" alt="CLUSTER dashboard" width="100%">
+
+</details>
+
+---
+
+## 🔄 Migration-Safe VM & LXC Monitoring
+
+V5 tracks guests at cluster scope instead of treating the physical node as part of the guest identity.
+
+When a VM or LXC migrates between Proxmox nodes, Home Assistant keeps the same logical entity identity instead of creating a new guest representation.
+
+- Existing `unique_id` continuity is preserved.
+- Existing `entity_id` continuity is preserved.
+- History and statistics remain attached to the same entities.
+- Dashboards and automations continue referencing the same entities.
+- Guest controls follow the migrated VM/LXC.
+
+<details>
+<summary><b>🔎 Migration behavior and known limitation</b></summary>
+
+Migration reconciliation is progressive. Immediately after a guest moves, the device associated with the source node can remain temporarily empty while sensors, replication information and cleanup converge over subsequent coordinator cycles.
+
+This temporary state is accepted by design in order to prioritize entity continuity and safe reconciliation.
+
+</details>
+
+---
+
+## 🛡️ Resilient Monitoring & Fault Isolation
+
+V5 is designed so that one failing subsystem does not unnecessarily invalidate the rest of the integration.
+
+- Independent API task timeouts.
+- Controlled concurrency to avoid API saturation.
+- Section-level preservation of the last valid data.
+- Automatic recovery when the affected endpoint becomes available again.
+- Safe cleanup during partial first refreshes.
+- Cluster metadata preservation without creating duplicate VM/LXC devices.
+
+<details>
+<summary><b>⚙️ Technical details</b></summary>
+
+The coordinator uses independent task protection together with controlled asynchronous concurrency. Partial failures are isolated and the integration can preserve previously valid data for the affected section while unrelated sections continue to update normally.
+
+This protection covers PVE, PBS, CLUSTER metadata and sidecar-backed hardware information.
+
+</details>
+
+---
+
+## 🔁 PVE Replication Status
+
+V5 adds native monitoring for Proxmox VE replication jobs.
+
+### Cluster-level entities
+
+- **Replication Jobs** — number and inventory of configured replication jobs.
+- **Replication Status** — global replication state and failed-job details.
+
+### Per-job information
+
+Each replication job can expose:
+
+- Duration
+- Last Replication
+- Next Replication
+- Source and target
+- Guest and VM type
+- Failure count
+- Runtime freshness and error details
+
+Replication identity is based on the Proxmox replication job ID rather than the physical node, so replication information continues to follow a VM/LXC when it migrates.
+
+<details>
+<summary><b>🔎 Failure handling</b></summary>
+
+Inventory and runtime information are preserved independently. A temporary failure querying the replication runtime is not automatically interpreted as a failed replication job.
+
+The integration distinguishes fresh data, preserved data and unknown runtime state.
+
+</details>
+
+---
+
+## 🗄️ Proxmox Backup Server (PBS)
+
+V5 significantly expands PBS monitoring and action tracking.
+
+### Maintenance actions
+
+- **Garbage Collection (GC)** — direct datastore action.
+- **Prune** — runs the configured Prune Job for the datastore.
+- **Verify** — runs the configured Verify Job.
+- **Sync** — runs the configured Sync Job when available.
+
+Actions launched from Home Assistant are tracked using the exact **UPID** returned by PBS.
+
+This allows the integration to distinguish between:
+
+**Started → Running → OK / Error**
+
+instead of treating an accepted POST request as a completed task.
+
+### Datastore visibility
+
+PBS monitoring includes datastore usage, backup information, deduplication and maintenance status using the real metrics exposed by PBS.
+
+<details>
+<summary><b>🔎 How PBS action tracking works</b></summary>
+
+The UPID returned by PBS is kept per server, datastore and action. When that exact task appears in the PBS task list, the integration follows its real runtime and final result.
+
+When no Home Assistant-triggered UPID is available, the integration can still fall back to the most recent matching job for tasks launched directly from PBS or by a schedule.
+
+GC runs directly against the datastore. Prune, Verify and Sync use their configured PBS jobs.
+
+</details>
+
+---
+
+## 🧩 Multi-PBS Support
+
+V5 introduces persistent PBS server identity so multiple Proxmox Backup Server instances remain isolated inside Home Assistant.
+
+- Stable `server_id` allocation.
+- Re-added PBS instances can recover their previous identity.
+- New PBS instances do not reuse reserved historical IDs.
+- Maintenance actions and last-action tracking remain associated with the correct PBS server.
+- Datastores with the same name on different PBS instances do not collide functionally.
+
+---
+
+## ❤️ Sidecar Status
+
+Each PVE node exposes a single **Sidecar Status** diagnostic sensor summarizing the health of the existing `pve-sensors` endpoints:
+
+- Memory
+- Mounts
+- Sensors
+- SMART
+
+Possible states:
+
+- `ok`
+- `degraded`
+- `error`
+- `unknown`
+
+When the sidecar fails, previously valid hardware values are preserved instead of disappearing immediately.
+
+---
+
+## 🌐 Cluster Monitoring
+
+Monitor the Proxmox cluster as a whole with dedicated entities for:
+
+- Nodes online
+- CPU and RAM usage
+- Running VMs
+- Running CTs
+- Storage usage
+- Firewall state
+- Failed tasks
+- Backup jobs, backup age and backup health
+- Replication jobs and replication status
+
+---
+
+## 💽 Mounted Disks & Network Storage
+
+Deep visibility into each node's storage layer:
+
+- Automatic discovery of local and network mounts.
+- CIFS/SMB and NFS information.
+- Usage and mount details.
+- Detection of missing mounts.
+- Filtering of irrelevant temporary/system mounts.
+
+---
+
+## 🧠 Hardware & Node Monitoring
+
+- CPU and system health information.
+- Package/core thermal monitoring where available.
+- Chipset and NVMe temperatures.
+- NVMe SMART and health information.
+- DIMM/SMBIOS information where supported by the sidecar.
+- I/O Wait and network traffic.
+- KSM information.
+- Node update information.
+
+---
+
+## 🖥️ Virtual Machines & Containers
+
+VM and LXC monitoring includes the guest state and resource information exposed by Proxmox and the integration.
+
+V5 additionally includes:
+
+- **CT memory percentage**
+- **CT disk percentage**
+- **VM memory percentage**
+- `onboot`, expected state and state/onboot matching information
+- Cluster-aware migration continuity
+
+> VM disk percentage is not exposed because V5 does not currently have a sufficiently reliable source metric for it.
+
+---
+
+## 💾 Backup Services (VMs & CTs)
+
+The integration provides backup orchestration directly from Home Assistant.
+
+### 🟦 Single/Batch Backup (`create_vzdump_backup`)
+
+- Supports local storage, NFS and PBS targets.
+- Multiple guest IDs can be backed up in one operation.
+- Native Proxmox backup execution preserves compatibility with PBS deduplication.
+
+### 🟩 Massive Backup (`backup_all`)
+
+- Back up all guests on a node.
+- Configurable concurrency and delays.
+- Suitable for scheduled Home Assistant automations.
 
 ---
 
 ## 🧩 Supported Versions
 
 - Proxmox VE 7.x / 8.x / 9.x
-- Linux Kernel 6.x / 7.x
-- Proxmox Backup Server 3.x / 4.x  
-- Home Assistant 2024.6+  
-
----
-
-## 📑 Table of Contents
-
-- [Key Features v4](#-key-features-v400)
-- [Cluster Monitoring](#-cluster-module-new)
-- [Mounted Disks & Network Storage](#-mounted-disks-module-new)
-- [Node Status & Performance](#-node-status--performance)
-- [Disks & Hardware](#-disks--smart)
-- [Virtual Machines & Containers](#-virtual-machines-qemu)
-- [Backup Services](#-backup-services-vms--cts)
-- [Proxmox Backup Server (PBS)](#-proxmox-backup-server-pbs)
-- [Installation](#-installation)
-
----
-
-## 🔥 Key Features (v4.0.0)
-
-### 🌐 Cluster Module (NEW)
-*Monitor your entire Proxmox infrastructure as a single entity.*
-*   **Global Backup Stats:** Backup Health, Age, and Total Jobs across the cluster.
-*   **Infrastructure Health:** Nodes Online, Failed Tasks, and aggregated CPU/RAM usage.
-*   **Resource Tracking:** Global count of running VMs and CTs.
-
-### 💽 Mounted Disks Module (NEW)
-*Deep visibility into your node's storage layer.*
-*   **Dynamic Detection:** Automatically lists `local_mounts` and `network_mounts`.
-*   **Network Storage:** Detailed attributes for **CIFS/SMB** and **NFS** mounts (Server, Share, Usage).
-*   **Mount Integrity:** Sensors for `missing_mounts` and `all_mounted` status.
-*   **Filtered View:** Smart exclusion of system-temp mounts (tmpfs, dev, etc.) to show only relevant data.
-
-### 🧠 Advanced Hardware Insight
-*   **Precision Thermals:** Package-level temperature priority with core-average fallback.
-*   **NVMe Master:** Real device names, SMART health, and multiple thermal zone support (NAND/Controller).
-*   **Clean Entity Naming:** Nodes are used in the device registry, not hardcoded into sensor names, keeping your UI clean.
-
----
-
-### 🖥️ Virtual Machines & Containers
-- Status, CPU/RAM/Disk usage (Real-time).
-- **Per-core usage** and core count attributes.
-- Network RX/TX per guest.
-- Full control actions: Start, Stop, Reboot, Shutdown, Pause, Hibernate.
-
----
-
-## 💾 Backup Services (VMs & CTs)
-
-The integration provides professional-grade backup orchestration directly from Home Assistant.
-
-### 🟦 Single/Batch Backup (`create_vzdump_backup`)
-*   **Flexible Targets:** Supports local storage, NFS, or PBS.
-*   **Batch Mode:** Backup multiple IDs simultaneously (e.g., `101,105,110`).
-*   **Naming Convention:** `HA-{{vmid}}-{{guestname}}` for easy identification.
-
-### 🟩 Massive Backup (`backup_all`)
-*   **Orchestration:** Back up all guests on a node with configurable concurrency and delays.
-*   **Auto-Maintenance:** Perfect for nightly scheduled automations.
-
-### 🟧 PBS Deduplication & Compatibility
-All backups triggered via HA are **100% native**. They support PBS deduplication, incremental chains, and Garbage Collection exactly like the Proxmox GUI.
-
----
-
-## 🗄️ Proxmox Backup Server (PBS)
-
-**Specialized Datastore Monitoring:**
-- **Security:** V4 requires **API Token** for PBS (Password login disabled for stability).
-- **Maintenance:** Dedicated sensors for Garbage Collector (GC) status, Prune, and Verify tasks.
-- **Deduplication:** Real-time deduplication ratio and datastore efficiency metrics.
-
----
-
-## 🎨 Visual Organization
-
-V4 cleans up your HA dashboard by automatically grouping sensors into:
-1. **Cluster** (Global state)
-2. **Node** (Physical host)
-3. **Physical Disks** (SSD/NVMe devices)
-4. **Virtual Machines / Containers**
-5. **Storages / Datastores**
+- Proxmox Backup Server 3.x / 4.x
+- Home Assistant 2026.5+
 
 ---
 
 ## 🧩 Installation
 
 ### 🔹 Via HACS (Recommended)
-1. Open **HACS → Integrations**.
-2. Click **Custom repositories** and add: `https://github.com/Javisen/proxmox_sensors`
-3. Search for **“Proxmox Extended Sensors”** and install.
-4. Restart Home Assistant.
 
+[![Open your Home Assistant instance and open Proxmox Extended Sensors in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Javisen&repository=proxmox_sensors&category=integration)
+
+**Proxmox Extended Sensors is available in the default HACS repository — no custom repository is required.**
+
+1. Open **HACS → Integrations**.
+2. Search for **Proxmox Extended Sensors**.
+3. Click **Download**.
+4. Restart Home Assistant.
+5. Go to **Settings → Devices & Services → Add Integration**.
+6. Search for **Proxmox Extended Sensors** and configure your PVE, PBS and/or CLUSTER connection.
+
+> The optional Proxmox Dashboard is installed separately.
+> See [Dynamic Proxmox Dashboard](#-dynamic-proxmox-dashboard).
 
 ---
 
 ## 🙌 Special Thanks
 
-Special thanks to community members who helped test V4 across different hardware platforms and contributed valuable bug reports, debugging, and fixes for:
+Special thanks to the community members who tested the integration across different hardware and Proxmox environments and contributed bug reports, diagnostics and validation.
+
+Previous development cycles especially benefited from testing around:
+
 - lm-sensors compatibility
-- CPU thermal detection
-- DIMM/SMBIOS parsing improvements
-- Home Assistant entity stability
+- PBS behavior
+- cluster monitoring
+- backup jobs
+- storage layouts
+- hardware differences between systems
 
-Your feedback helped make V4 significantly more robust across heterogeneous Proxmox environments.
+V5 additionally benefited from real-world testing of guest migration, replication behavior, PBS maintenance tracking, sidecar failures and dashboard generation.
 
-
-Special thanks to @CyberGWJ for extensive hardware testing and parser debugging contributions during the V4 development cycle.
-
-
----
-
-## 🤝 Contributing & Community
-Contributions are welcome! If you find this integration useful, please consider giving the project a ⭐ on GitHub.
-
-**[Visit GitHub Repository](https://github.com/Javisen/proxmox_sensors)**
+Thank you to everyone who reports issues, tests fixes and helps make the integration more reliable. ❤️
 
 ---
 
-<p align="center"><i>Maintained by Javisen - MIT License</i></p>
+## 🤝 Contributing
+
+Contributions, testing and bug reports are welcome.
+
+Please use the GitHub issue tracker for reproducible problems and include relevant Home Assistant / Proxmox logs where appropriate.
+
+---
+
+## 📄 License
+
+MIT License
+
+Copyright (c) Javisen

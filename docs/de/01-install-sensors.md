@@ -1,66 +1,36 @@
-# 🚀 Schritt 1: Installation und Konfiguration der Sensoren
+# 🌡️ Schritt 1: Hardware-Sensoren und Sidecar
 
-Diese Anleitung erklärt, wie der Proxmox-Knoten vorbereitet wird, um Hardware-Daten bereitzustellen und es Home Assistant zu ermöglichen, Temperaturen, physische Sensoren und SMART-Attribute der Festplatten zu erfassen.
+Diese Anleitung bereitet einen Proxmox-VE-Knoten für Hardwaredaten vor, die nicht über die Standard-Proxmox-API verfügbar sind. V5 nutzt den Sidecar unter anderem für Temperaturen, Speicherinformationen, Mounts und SMART und stellt zusätzlich **Sidecar Status** bereit.
 
-Diese Daten werden von der Integration genutzt, um **erweiterte Überwachung und System Insight (V3/V4)** bereitzustellen.
-
----
-
-## 1. Installation der Abhängigkeiten
-
-Um alle Hardware- und SMART-Sensoren zu aktivieren, installiere:
-
-- **lm-sensors** → CPU, Mainboard, Chipsatz, VRM, Lüfter
-- **smartmontools** → SMART-Informationen von HDD, SSD und NVMe
-
+## 1. Pakete installieren
+```bash
 apt update && apt install lm-sensors smartmontools -y
+```
+`lm-sensors` liefert unterstützte CPU-, Mainboard-, Chipsatz-, VRM- und Lüfterdaten; `smartmontools` SMART-Daten für HDD, SSD und unterstützte NVMe-Geräte.
 
-## 2. Hardware-Erkennung
-
-* **Führe den Assistenten aus:**
-
+## 2. Sensoren erkennen
 ```bash
 sensors-detect
 ```
+Folge dem Assistenten und aktiviere die für deine Hardware passenden Module. Werden Einträge für `/etc/modules` angeboten, stelle sicher, dass die benötigten Module für Neustarts gespeichert werden.
 
-Antworte mit **YES** (oder drücke Enter) auf alle Fragen.
-
-Nach Abschluss erkennt das System die erforderlichen Module (zum Beispiel: coretemp bei Intel-CPUs).
-
-## 3. Module dauerhaft laden
-
-Am Ende des Prozesses erscheint diese Frage:
-
-Do you want to add these lines automatically to /etc/modules? (yes/NO)
-
-> [!CAUTION]
-> **Du musst manuell `yes` eingeben und Enter drücken.** Drückst du nur Enter, wird standardmäßig `NO` ausgewählt und die Sensoren werden nach einem Neustart nicht geladen.
-
-## 4. Sofortige Überprüfung
-
-Um die Sensoren ohne Neustart zu aktivieren:
-
+## 3. Prüfen
+```bash
+sensors
+```
+Bei Intel-Systemen mit `coretemp` kann bei Bedarf getestet werden:
 ```bash
 modprobe coretemp
 sensors
 ```
+`coretemp` nicht auf Systemen erzwingen, die einen anderen Treiber verwenden.
 
-## 🚀 Schritt 5: Installation des Sensor-Servers (API Bridge)
-
-Die offizielle Proxmox-API legt nicht alle Hardware-Sensoren offen.
-Daher verwendet diese Integration einen kleinen Dienst, der als Brücke fungiert.
-
-5.1. **Skript herunterladen und installieren**
-Führe diese Befehle auf dem Terminal deines Proxmox-Servers aus:
-
+## 4. Sidecar installieren
 ```bash
 wget https://raw.githubusercontent.com/Javisen/proxmox_sensors/main/scripts/pve-sensors-api.py -O /usr/local/bin/pve-sensors-api.py
 chmod +x /usr/local/bin/pve-sensors-api.py
 ```
 
-5.2. **Als Systemdienst konfigurieren**
-
-Erstelle die Dienstdatei:
 ```bash
 cat <<EOF > /etc/systemd/system/pve-sensors.service
 [Unit]
@@ -71,7 +41,6 @@ After=network.target
 ExecStart=/usr/bin/python3 /usr/local/bin/pve-sensors-api.py
 Restart=always
 RestartSec=10s
-
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=full
@@ -79,26 +48,17 @@ ProtectSystem=full
 [Install]
 WantedBy=default.target
 EOF
-```
-5.3. **Aktivierung**
-
-```bash
 systemctl daemon-reload
 systemctl enable --now pve-sensors.service
 ```
 
-
-5.4. **Abschließende Überprüfung**
-Öffne im Browser:
+## 5. Sidecar prüfen
+```bash
+systemctl status pve-sensors.service
 ```
-http://DEINE_PROXMOX_IP:9000/sensors
-```
-Wenn ein JSON mit Temperaturen und Sensoren erscheint, funktioniert der Dienst korrekt.
+Öffne anschließend `http://DEINE_PROXMOX_IP:9000/sensors`. Eine JSON-Antwort bestätigt, dass der Sidecar reagiert.
 
-## ✔ Fazit
+## 6. Verhalten bei Sidecar-Ausfall
+V5 behält nach Möglichkeit die letzten gültigen Hardwarewerte. **Sidecar Status** zeigt pro PVE-Knoten den Zustand von Memory, Mounts, Sensors und SMART als `ok`, `degraded`, `error` oder `unknown`.
 
-Sobald:
-- sensors korrekt Daten zurückgibt
-- der Dienst pve-sensors.service aktiv ist
-
-kann Home Assistant alle Hardware-Daten automatisch abrufen, ohne zusätzliche Konfiguration.
+Weiter: [02. Proxmox-Benutzer und Berechtigungen](02-proxmox-config.md)

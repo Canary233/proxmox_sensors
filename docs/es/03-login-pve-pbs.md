@@ -1,156 +1,177 @@
-# 🔌 Paso 3: Instalación de la Integración en Home Assistant
+# 🔌 Paso 3: Configuración en Home Assistant — PVE, PBS y CLUSTER
 
-Para visualizar todos los datos (temperaturas, sensores de hardware, discos, PBS, VMs y CTs), utilizaremos la integración **Proxmox Extended Sensors**.
+Esta guía explica cómo instalar **Proxmox Extended Sensors V5** y añadir conexiones PVE, PBS o CLUSTER a Home Assistant.
 
 ---
 
-## 1. Instalación mediante HACS
+## 1. Instalar mediante HACS
 
-Al ser una integración personalizada, primero debes añadirla a HACS:
+[![Abre tu instancia de Home Assistant y Proxmox Extended Sensors en HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Javisen&repository=proxmox_sensors&category=integration)
 
-1. Ve a **HACS → Integraciones**  
-2. Haz clic en los **tres puntos** (arriba a la derecha)  
-3. Selecciona **Repositorios personalizados**  
-4. Añade este repositorio:  
-   `https://github.com/Javisen/proxmox_sensors/`  
-5. En **Categoría**, selecciona `Integración`  
-6. Instala la integración y **reinicia Home Assistant**
+**Proxmox Extended Sensors está incluido en el repositorio predeterminado de HACS. No necesitas añadir ningún repositorio personalizado.**
+
+1. Abre **HACS → Integraciones**.
+2. Busca **Proxmox Extended Sensors**.
+3. Descárgalo.
+4. Reinicia Home Assistant.
 
 ---
 
 ## 2. Añadir la integración
 
-Tras reiniciar:
+Después de reiniciar Home Assistant:
 
-1. Ve a **Ajustes → Dispositivos y Servicios**  
-2. Haz clic en **Añadir Integración**  
-3. Busca **Proxmox Extended Sensors**
+1. Ve a **Ajustes → Dispositivos y servicios**.
+2. Pulsa **Añadir integración**.
+3. Busca **Proxmox Extended Sensors**.
 
----
+La primera pantalla de configuración solicita:
 
-## 3. Configuración de conexión
+- Host
+- Tipo de servidor
 
-### 🔹 Host
-- **Red local:** `192.168.1.50`  
-- **Acceso externo:** `proxmox.midominio.com`  
+Los tipos disponibles son:
 
-> No es necesario incluir `http://` o `https://`. Se detecta automáticamente.
-
----
-
-### 🔹 Tipo de servidor
-- **CLUSTER** → Proxmox Cluster
-- **PVE** → Proxmox Virtual Environment  
-- **PBS** → Proxmox Backup Server  
+- **PVE** — Proxmox Virtual Environment
+- **PBS** — Proxmox Backup Server
+- **CLUSTER** — vista del clúster Proxmox
 
 ---
 
-### 🔹 Método de autenticación
+## 3. Host
 
-- **Usuario + contraseña** → solo en PVE y Cluster
-- **API Token** → Obligatorio en PBS  
+Introduce la dirección IP o el nombre de host del servidor, por ejemplo:
 
----
+```text
+192.168.1.50
+```
 
-## 🔐 Opción A: Usuario y contraseña (solo PVE)
+o:
 
-Campos:
+```text
+pve.example.local
+```
 
-- **User:** `usuario@realm`  
-  - Ejemplo: `homeassistant@pve`  
-- **Password:** contraseña del usuario  
-
-> 💡 Desde la V3, el nodo se detecta automáticamente. No es necesario introducirlo manualmente.
-
----
-
-## 🔐 Opción B: API Token (recomendado)
-
-Campos:
-
-- **User:** `usuario@realm`  
-- **Token ID:** solo el nombre → `ha-token`  
-- **Token Secret:** el secret generado en Proxmox  
-
-> ⚠️ No uses el formato `usuario@pve!token`
+La integración gestiona internamente el esquema de conexión, por lo que normalmente debes introducir únicamente el valor de host solicitado por el formulario.
 
 ---
 
-## 🧠 Selección de recursos (PVE)
+## 4. Autenticación
 
-Tras conectar, la integración detectará automáticamente los recursos disponibles.
+### PVE
 
-Podrás seleccionar:
+V5 admite:
 
-- Máquinas virtuales (VMs)  
-- Contenedores (CTs)  
-- Discos físicos  
-- Storages  
+- Usuario + contraseña
+- API Token
 
-> 💡 Selecciona solo lo necesario para mantener Home Assistant limpio y eficiente.
+### PBS
 
----
+El flujo de configuración actual de V5 utiliza **autenticación mediante API Token** para PBS.
 
-## 🧭 Guía Visual de Instalación
+### CLUSTER
 
-A continuación se muestra el proceso completo con capturas:
-
-<details>
-  <summary>🪪 Conexión con el servidor</summary>
-  <p align="center">
-    <img src="../../img/install/setup_pve_1.png" alt="Conexión Proxmox" width="600">
-  </p>
-  <p align="center"><i>No es necesario incluir http/https.</i></p>
-</details>
-
-<details>
-  <summary>🪪 Login con usuario y contraseña (PVE)</summary>
-  <p align="center">
-    <img src="../../img/install/access_passw.png" alt="Login usuario" width="600">
-  </p>
-  <p align="center"><i>Usa el realm correcto (pam o pve).</i></p>
-</details>
-
-<details>
-  <summary>🪪 Login con token (PVE y PBS)</summary>
-  <p align="center">
-    <img src="../../img/install/access_token.png" alt="Login token" width="600">
-  </p>
-  <p align="center"><i>Introduce solo el nombre del token en Token ID.</i></p>
-</details>
-
-<details>
-  <summary>🧠 Selección de nodos (V3)</summary>
-  <p align="center">
-    <img src="../../img/install/node_select.png" alt="Selección nodos" width="600">
-  </p>
-  <p align="center"><i>Los nodos se detectan automáticamente y pueden seleccionarse manualmente.</i></p>
-</details>
-
-<details>
-  <summary>⚙️ Selección de recursos</summary>
-  <p align="center">
-    <img src="../../img/install/resources_select.png" alt="Selección recursos" width="600">
-  </p>
-</details>
+CLUSTER utiliza su propio flujo de configuración y las credenciales configuradas para el acceso al clúster.
 
 ---
 
-## ⚠️ Nota sobre PBS en entornos gestionados
+## 5. Campos del API Token
 
-Si utilizas un PBS **gestionado o multi-tenant** (Tuxis, Hetzner, etc.):
+Cuando selecciones autenticación mediante token, introduce:
 
-- No tendrás acceso a sensores de hardware  
-- No verás temperaturas ni discos físicos  
-- No habrá métricas de nodo  
+- **User** → usuario completo y realm, por ejemplo `homeassistant@pve`
+- **Token ID** → solo el nombre del token, por ejemplo `ha-token`
+- **Token Secret** → el secret generado
 
-Esto es normal porque:
-
-- No tienes acceso al hardware real  
-- El proveedor restringe el sistema  
-- No existen permisos de bajo nivel  
-
-**Resultado:**  
-Solo se mostrarán datos limitados del datastore.
+No introduzcas la cadena completa combinada del token en el campo Token ID.
 
 ---
+
+## 6. Selección de nodo y recursos PVE
+
+Después de validar una conexión PVE, la integración descubre los recursos Proxmox disponibles y continúa con su flujo de selección de nodos y recursos.
+
+Dependiendo del entorno, puedes configurar la monitorización de recursos como:
+
+- nodos
+- VMs
+- contenedores LXC
+- storages
+- información de hardware
+
+V5 utiliza una identidad de VM/LXC a nivel de clúster, por lo que las entidades de guest pueden seguir las migraciones entre nodos conservando su identidad en Home Assistant.
+
+---
+
+## 7. Configuración PBS
+
+Una conexión PBS crea su propia entrada de configuración en Home Assistant.
+
+V5 asigna una identidad persistente al servidor PBS para que puedan coexistir varias instancias sin mezclar acciones de mantenimiento ni estados de datastore.
+
+La monitorización PBS puede incluir:
+
+- uso del datastore
+- información de backups
+- deduplicación
+- estado de tareas
+- GC
+- Prune
+- Verify
+- Sync cuando existe un Sync Job
+
+---
+
+## 8. Configuración CLUSTER
+
+El tipo de servidor CLUSTER se utiliza para entidades globales del clúster como:
+
+- quórum y estado de nodos
+- CPU y RAM agregadas
+- número de VM y CT
+- información de almacenamiento del clúster
+- tareas fallidas
+- salud de backups
+- estado de replicación PVE
+
+---
+
+## 9. Dashboard dinámico de Proxmox opcional
+
+V5 incluye un generador de dashboards opcional para PVE, PBS y CLUSTER.
+
+### Requisitos
+
+- Proxmox Extended Sensors V5
+- Card Mod
+
+### Instalación
+
+1. Instala **Card Mod** desde HACS.
+2. Añade este recurso Lovelace como **Módulo JavaScript**:
+
+   ```text
+   /proxmox_sensors/proxmox-dashboard.js
+   ```
+
+3. Recarga el navegador.
+4. Crea un nuevo dashboard y elige la estrategia de comunidad **Proxmox Extended Sensors**.
+5. Selecciona uno de los tipos ofrecidos para tu instalación: **PVE**, **PBS** o **CLUSTER**.
+
+El dashboard seguirá siendo gestionado por la estrategia hasta que elijas **Tomar el control (Take Control)**. Después podrás editarlo como cualquier dashboard Lovelace normal.
+
+---
+
+## 10. Servicios PBS gestionados
+
+En servicios PBS alojados o multi-tenant, el proveedor puede restringir la información de hardware o de bajo nivel del nodo.
+
+Esto no indica necesariamente un error de la integración. Las entidades disponibles dependen de lo que el proveedor exponga mediante tu cuenta PBS y sus permisos de API.
+
+---
+
+## ✔ Conclusión
+
+Tu conexión PVE, PBS y/o CLUSTER debería estar ya disponible en Home Assistant.
+
+Siguiente: [04. Preguntas frecuentes y solución de problemas](04-faq.md)

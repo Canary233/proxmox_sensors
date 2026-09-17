@@ -1,138 +1,118 @@
-# 🔐 Step 2: User and Permission Configuration
+# 🔐 Step 2: Proxmox User and Permission Configuration
 
-For Home Assistant to communicate with Proxmox securely, it is recommended **not to use the root user**.
+For Home Assistant to communicate with Proxmox, use a dedicated account instead of the root account whenever possible.
 
-Instead, we will create a dedicated user with the necessary permissions for the integration to work correctly.
-
----
-
-> ⚠️ **IMPORTANT**  
-> Due to the advanced features of the integration (VM/CT control, backups, PBS actions, etc.), it is necessary to assign elevated permissions in Proxmox.
->
-> These permissions allow:
-> - Control virtual machines and containers  
-> - Run backups (individual and bulk)  
-> - Access node, disk, and task information  
-> - Interact with Proxmox Backup Server (PBS)  
->
-> Although these are broad permissions, using a **dedicated user + API Token** keeps access isolated and controlled.
+The exact permissions you grant should match the features you intend to use. Monitoring-only access can be more restrictive, while guest control, backups and PBS maintenance actions require broader privileges.
 
 ---
 
-## 1. Difference between PVE and PBS
+## 1. PVE and PBS authentication
 
 ### 🖥️ Proxmox VE (PVE)
-- Allows authentication via:
-  - Username/Password  
-  - API Token  
-- The user must have the **PVEAdmin** role  
 
----
+V5 supports:
+
+- Username + password
+- API Token
+
+API Token authentication is recommended for a dedicated Home Assistant account.
 
 ### 🗄️ Proxmox Backup Server (PBS)
-- Requires an **API Token** (mandatory)  
-- The user must have the **Administrator** role  
-- There is no intermediate role compatible with all functions  
+
+The current V5 configuration flow uses **API Token authentication for PBS**.
+
+The setup form requires:
+
+- User
+- Token ID
+- Token Secret
 
 ---
 
-## 2. Creating the user
+## 2. Create a dedicated user
 
-1. Go to **Datacenter → Permissions → Users**  
-2. Click **Add**  
-3. Configure:
+Create a dedicated Home Assistant user on the Proxmox server you are configuring.
 
-- **User:** `homeassistant`  
-- **Realm:** `pve`  
-- **Password:** (only if you will use password login for PVE)
+For PVE, this is normally done from:
 
-4. Save the changes  
+**Datacenter → Permissions → Users**
 
----
+A typical example is:
 
-## 3. Assigning permissions
+```text
+homeassistant@pve
+```
 
-1. Go to **Datacenter → Permissions**  
-2. Click **Add → User Permission**  
+For PBS, create the corresponding user in PBS and use the correct PBS realm for that account.
 
----
-
-### ✔ For Proxmox VE (PVE)
-
-- **Path:** `/`  
-- **User:** `homeassistant@pve`  
-- **Role:** `PVEAdmin`  
+> Do not assume that a PVE user automatically exists on PBS. PVE and PBS are separate authentication systems.
 
 ---
 
-### ✔ For Proxmox Backup Server (PBS)
+## 3. Assign permissions
 
-- **Path:** `/`  
-- **User:** `homeassistant@pve`  
-- **Role:** `Administrator`  
+The integration can expose monitoring, control, backup and maintenance features, so the required privilege set depends on what you want Home Assistant to do.
 
----
+For a full-feature PVE installation, the existing documentation has traditionally used a dedicated user with the **PVEAdmin** role at `/`.
 
-> 💡 **Why use `/` (global access)**  
-> The integration needs access to the entire infrastructure:
-> nodes, VMs, containers, disks, storages, and tasks.
+For a full-feature PBS installation, the existing documentation has traditionally used a dedicated user with the **Administrator** role at `/`.
 
----
+These are broad roles. If you intentionally build a more restrictive role, test all functions you plan to use, especially:
 
-## 4. Creating the API Token
+- VM and CT control
+- backup services
+- cluster and task visibility
+- storage information
+- PVE replication information
+- PBS GC, Prune, Verify and Sync actions
 
-1. Go to **Datacenter → Permissions → API Tokens**  
-2. Click **Add**  
-3. Configure:
-
-- **User:** `homeassistant@pve`  
-- **Token ID:** `ha-token`  
-- **Privilege Separation:** ❌ Unchecked  
-- **Expire:** Never  
+V5 can detect when the connection has minimum access but lacks some optional endpoints and may mark the connection as having limited permissions.
 
 ---
 
-### 🔍 Why disable "Privilege Separation"?
+## 4. Create an API Token
 
-Because the token needs to inherit the user's full permissions.
+For PVE, go to:
 
-If this option is enabled:
-- the token will have limited permissions  
-- some functions (backups, control, PBS) will not work correctly  
+**Datacenter → Permissions → API Tokens**
 
----
+Select the dedicated user and create a token, for example:
 
-4. When creating the token, Proxmox will display:
+```text
+ha-token
+```
 
-- **Token ID**  
-- **Secret** (only visible once)
-
----
+When the token is created, save the secret immediately.
 
 > [!WARNING]
-> Save the **Secret** in a safe place.  
-> It will not be viewable again once you close this window.
+> The token secret is sensitive. Store it securely and do not publish it in screenshots, logs or issues.
+
+### Privilege Separation
+
+If you want the token to inherit the permissions of its parent user, configure **Privilege Separation** accordingly in Proxmox.
+
+A token with privilege separation enabled can require explicit token permissions in addition to the user permissions. If those permissions are missing, some integration features can fail with permission errors.
 
 ---
 
-> [!TIP]
-> ### 💡 Did you forget to copy the Secret?
-> There is no need to delete the token:
->
-> 1. Select the token in the list  
-> 2. Click **Regenerate**  
-> 3. A new Secret will be generated immediately  
->
-> ⚠️ Remember to update it in Home Assistant.
+## 5. Values required by Home Assistant
+
+When using token authentication, V5 expects:
+
+- **User** → complete user including realm, for example `homeassistant@pve`
+- **Token ID** → token name only, for example `ha-token`
+- **Token Secret** → the generated secret
+
+Do not enter the combined Proxmox API-token string in the Token ID field.
 
 ---
 
 ## ✔ Conclusion
 
-Once configured:
+You should now have:
 
-- Dedicated user  
-- Permissions correctly assigned  
-- API Token created  
+- a dedicated PVE and/or PBS user
+- the permissions required for the features you need
+- an API Token and secret
 
-The integration will be able to connect to Proxmox securely and with full access to all its features.
+Next: [03. Home Assistant Setup — PVE, PBS and CLUSTER](03-login-pve-pbs.md)

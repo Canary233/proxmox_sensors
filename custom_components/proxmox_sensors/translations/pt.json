@@ -77,12 +77,20 @@
       "unknown": "Erro inesperado. Verifique os logs do Home Assistant."
     },
     "abort": {
+      "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "Este nó já está configurado.",
       "no_data": "Nenhum dado do cluster recebido. Verifique a sua configuração.",
       "cluster_no_options": "As configurações do cluster são geridas a partir da configuração do nó PVE."
     }
   },
   "options": {
+    "error": {
+      "guest_discovery_unavailable": "Guest discovery is unavailable. Guest selections will be preserved.",
+      "guest_selection_changed": "Guest selections changed in another Options flow. Reopen Options and try again.",
+      "guest_inventory_changed": "The guest inventory changed. Reopen Options and try again.",
+      "invalid_guest_selection": "Only guests shown for this node can be selected.",
+      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs."
+    },
     "abort": {
       "pbs_no_options": "Este servidor PBS não tem opções configuráveis.",
       "cluster_no_options": "As configurações do cluster são geridas a partir da configuração do nó PVE.",
@@ -394,6 +402,7 @@
       "node_cpu_info": {
         "name": "Informação da CPU"
       },
+      "node_ksm_status": {"name": "KSM Status"},
       "node_ksm_shared": {
         "name": "Memória Partilhada KSM"
       },
@@ -523,6 +532,12 @@
       "proxmox_node": {
         "name": "Estado do Nó"
       },
+      "sidecar_status": {"name": "Sidecar Status"},
+      "replication_jobs": {"name": "Replication Jobs"},
+      "replication_status": {"name": "Replication Status"},
+      "replication_last_sync": {"name": "Replication {job_id} Last Replication"},
+      "replication_next_sync": {"name": "Replication {job_id} Next Replication"},
+      "replication_duration": {"name": "Replication {job_id} Duration"},
       "proxmox_storages": {
         "name": "Armazenamentos"
       },
@@ -636,6 +651,10 @@
       "name": "Proxmox: Iniciar backup",
       "description": "Backup das VMs e/ou contentores selecionados para o armazenamento especificado.",
       "fields": {
+        "entry_id": {
+          "name": "ID da entrada PVE",
+          "description": "ID opcional da entrada de configuração para distinguir nós com o mesmo nome."
+        },
         "node": {
           "name": "Nó",
           "description": "Nome do nó (ex. server)"
@@ -662,7 +681,7 @@
         },
         "delay_between": {
           "name": "Intervalo entre backups",
-          "description": "Segundos de espera entre backups"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         }
       }
     },
@@ -670,6 +689,10 @@
       "name": "Proxmox: Backup massivo",
       "description": "Backup de todas as VMs e/ou contentores no nó selecionado.",
       "fields": {
+        "entry_id": {
+          "name": "ID da entrada PVE",
+          "description": "ID opcional da entrada de configuração para distinguir nós com o mesmo nome."
+        },
         "node": {
           "name": "Nó",
           "description": "Nome do nó (ex. pve)"
@@ -692,7 +715,7 @@
         },
         "delay_between": {
           "name": "Intervalo entre backups",
-          "description": "Segundos entre backups (0 = sem intervalo)"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         },
         "include_vms": {
           "name": "Incluir VMs",
@@ -708,6 +731,10 @@
       "name": "Proxmox: Desligar nó",
       "description": "Solicita confirmação e desliga o nó selecionado.",
       "fields": {
+        "entry_id": {
+          "name": "ID da entrada PVE",
+          "description": "ID opcional da entrada de configuração para distinguir nós com o mesmo nome."
+        },
         "node": {
           "name": "Nó",
           "description": "Nome do nó (ex. pve)"
@@ -722,6 +749,10 @@
       "name": "Proxmox: Reiniciar nó",
       "description": "Solicita confirmação e reinicia o nó selecionado.",
       "fields": {
+        "entry_id": {
+          "name": "ID da entrada PVE",
+          "description": "ID opcional da entrada de configuração para distinguir nós com o mesmo nome."
+        },
         "node": {
           "name": "Nó",
           "description": "Nome do nó (ex. pve)"
@@ -732,15 +763,24 @@
         }
       }
     },
+    "dashboard_preview": {
+      "name": "Dashboard preview",
+      "description": "Return a read-only inventory and static dashboard plan for all Proxmox entries. Does not install or modify dashboards."
+    },
     "wake_node": {
       "name": "Proxmox: Despertar nó",
       "description": "Desperta um nó Proxmox usando Wake-on-LAN.",
       "fields": {
+        "entry_id": {
+          "name": "ID da entrada PVE",
+          "description": "ID opcional da entrada de configuração para distinguir nós com o mesmo nome."
+        },
         "node": {
           "name": "Nó"
         },
         "mac": {
-          "name": "Endereço MAC"
+          "name": "Endereço MAC",
+          "description": "O MAC explícito tem prioridade; caso contrário, é usado o MAC do nó configurado na entrada selecionada."
         }
       }
     }

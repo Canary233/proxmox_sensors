@@ -1,117 +1,44 @@
-# 🚀 Passo 1: Instalação e configuração de sensores
+# 🌡️ Passo 1: Sensores de hardware e Sidecar
 
-**Este guia explica como preparar o nó Proxmox para que exponha os dados de hardware e garanta que as leituras de temperatura e os dados Smart estejam disponíveis para o Home Assistant.**
+Este guia prepara um nó Proxmox VE para dados de hardware que não são expostos pela API Proxmox padrão. V5 usa o sidecar para temperaturas, memória, mounts e SMART e adiciona **Sidecar Status**.
 
-
-## 1. Instalação de dependências
-
-*Para que a integração possa ler todos os sensores de hardware e os atributos SMART dos discos, é necessário instalar as seguintes ferramentas no Proxmox:*
-
-- **lm-sensors** → Sensores de CPU, placa-mãe, chipset, VRM, ventoinhas…**
-- **smartmontools** → Informações SMART de HDD, SSD e NVMe**
-
-
+## 1. Instalar pacotes
 ```bash
-
 apt update && apt install lm-sensors smartmontools -y
-
 ```
 
-## 2. Deteção de hardware
-
-* **Execute o assistente de deteção para identificar os módulos necessários:**
-
-
+## 2. Detetar sensores
 ```bash
-
 sensors-detect
-
 ```
+Siga o assistente e ative os módulos adequados. Se for proposta a gravação em `/etc/modules`, assegure que os módulos necessários persistem após reiniciar.
 
-**Responda YES (ou prima Enter) a todas as perguntas. Ao terminar, o sistema identificará os módulos necessários (por exemplo: `coretemp` para CPUs Intel).**
-
-
-## 3. Persistência de módulos
-
-**Para que os sensores se ativem sozinhos ao reiniciar o servidor, o assistente `sensors-detect` fará uma pergunta fundamental no final do processo:**
-
-
-`Do you want to add these lines automatically to /etc/modules? (yes/NO)`
-
-
-
-> [!CAUTION]
-> **Deve escrever `yes` manualmente e premir Enter.** Se apenas premir Enter sem escrever nada, o sistema selecionará `NO` por defeito. Se isto acontecer, os sensores não serão carregados após um reinício e o Home Assistant deixará de receber dados de temperatura.
-
-
-
-## 4. Verificação imediata
-
-**Para ativar os sensores agora mesmo sem ter de reiniciar, execute:**
-
-
-
+## 3. Verificar
 ```bash
-
-# Carrega os módulos detetados (exemplo para Intel)
-
-modprobe coretemp
-
-# Verifica se as temperaturas são apresentadas
-
 sensors
-
 ```
-
-## 🚀 Passo 5: Instalação do Servidor de Sensores (API Bridge)
-**A API oficial do Proxmox não expõe todos os sensores de hardware, pelo que é necessário instalar um pequeno script que atua como ponte entre o Proxmox e o Home Assistant.**
-
-1. **Download e instalação do script**
-Execute estes comandos no terminal do seu servidor Proxmox:
+Em Intel com `coretemp`, se necessário:
 ```bash
-# Descarregar o script do repositório
-wget https://raw.githubusercontent.com/Javisen/proxmox_sensors/main/scripts/pve-sensors-api.py -O /usr/local/bin/pve-sensors-api.py
+modprobe coretemp
+sensors
+```
+Não force `coretemp` em sistemas que usam outro driver.
 
-# Dar permissões de execução
+## 4. Instalar sidecar
+```bash
+wget https://raw.githubusercontent.com/Javisen/proxmox_sensors/main/scripts/pve-sensors-api.py -O /usr/local/bin/pve-sensors-api.py
 chmod +x /usr/local/bin/pve-sensors-api.py
 ```
-2. **Configuração como serviço do sistema**
-Crie o ficheiro de serviço:
-```bash
-cat <<EOF > /etc/systemd/system/pve-sensors.service
-[Unit]
-Description=PVE Sensors API (User Mode)
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/python3 /usr/local/bin/pve-sensors-api.py
-Restart=always
-RestartSec=10s
-
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=full
-
-[Install]
-WantedBy=default.target
-EOF
-```
-
-3. **Ativação imediata**
-
+Crie o serviço systemd para executar `/usr/bin/python3 /usr/local/bin/pve-sensors-api.py` com reinício automático e depois:
 ```bash
 systemctl daemon-reload
-systemctl enable --now pve-sensors
+systemctl enable --now pve-sensors.service
 ```
 
-4. **Verificação final**
-Abra no seu navegador:
-```
-http://O_SEU_IP_PROXMOX:9000/sensors
-```
+## 5. Verificar sidecar
+Execute `systemctl status pve-sensors.service` e abra `http://IP_DO_SEU_PROXMOX:9000/sensors`. Uma resposta JSON confirma o funcionamento.
 
-Se aparecer um JSON com temperaturas e sensores, o servidor está a funcionar corretamente.
+## 6. Em caso de falha
+V5 preserva, quando possível, os últimos valores de hardware válidos. **Sidecar Status** mostra Memory, Mounts, Sensors e SMART como `ok`, `degraded`, `error` ou `unknown`.
 
-## ✔ Conclusão
-
-**Assim que o comando sensors devolve leituras e o serviço pve-sensors está ativo, o Home Assistant poderá obter todos os dados de hardware sem necessidade de configurações adicionais.**
+Seguinte: [02. Utilizador e permissões Proxmox](02-proxmox-config.md)

@@ -1,7 +1,13 @@
 """Storage sensors for Proxmox storage pools."""
 
+import logging
+
+from homeassistant.helpers import device_registry as dr
+
 from .base import ProxmoxBaseSensor
 from ..const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class ProxmoxStorageSensor(ProxmoxBaseSensor):
@@ -35,15 +41,28 @@ class ProxmoxStorageSensor(ProxmoxBaseSensor):
     @property
     def device_info(self):
         node_id = (self._node or "node").lower()
-        return {
+        info = {
             "identifiers": {
                 (DOMAIN, f"proxmox_storage_{node_id}_{self._storage_name}")
             },
             "name": f"5. Storage: {self._storage_name}",
-            "via_device": (DOMAIN, f"proxmox_node_{node_id}"),
             "manufacturer": "Proxmox",
             "model": "Storage Resource",
         }
+
+        try:
+            info["via_device_id"] = dr.async_get_device_id_by_identifier(
+                self.coordinator.hass,
+                (DOMAIN, f"proxmox_node_{node_id}"),
+                config_entry_id=self.coordinator.config_entry.entry_id,
+            )
+        except ValueError:
+            _LOGGER.debug(
+                "Parent node device %s not found in config entry %s; omitting via_device_id",
+                node_id,
+                self.coordinator.config_entry.entry_id,
+            )
+        return info
 
     def _get_value(self):
         storage_data = self.coordinator.data.get("storage", {}).get(

@@ -1,283 +1,45 @@
-# ❓ FAQ — Veelgestelde Vragen
+# ❓ FAQ — Proxmox Extended Sensors V5
 
-Hier vind je de meest voorkomende vragen en problemen bij het gebruik van de **Proxmox Extended Sensors**‑integratie, samen met snelle oplossingen.
+## 🔐 Verbinding
+Controleer bereikbaarheid, user/realm, actieve token, secret, API-rechten en SSL. `Permission denied` betekent vaak onvoldoende rechten.
 
----
+## 🌡️ Hardware en Sidecar
+Bij ontbrekende temperaturen: `sensors`, `systemctl status pve-sensors.service`, daarna `http://PROXMOX_IP:9000/sensors`.
 
-## 🔐 Ik kan niet inloggen op de integratie (PVE of PBS)
+**Sidecar Status** vat Memory, Mounts, Sensors en SMART samen (`ok`, `degraded`, `error`, `unknown`). V5 bewaart waar mogelijk laatste geldige waarden.
 
-### ✔ 1. Geen `http://` of `https://` invoeren
-Voer alleen het domein of IP‑adres in, bijvoorbeeld:
+## 🖥️ VM/LXC-migratie
+V5 gebruikt clusterbrede identiteit om `unique_id`, `entity_id`, geschiedenis, statistieken, automatiseringen en dashboards te behouden. Het bron-node-device kan tijdens reconciliation tijdelijk leeg zijn.
 
-192.168.1.10  
-pve.mijn-domein.com
+Geen VM-schijfpercentage wegens onvoldoende betrouwbare metriek; CT-schijfpercentage is beschikbaar wanneer data bestaat.
 
----
+## 🔁 PVE-replicatie
+Clusterstatus plus duur, laatste en volgende replicatie per job. Een tijdelijke API/runtime-fout betekent niet automatisch een echte replicatiefout.
 
-### ✔ 2. Geen poort invoeren
-De integratie detecteert automatisch de juiste poort.
+## 🗄️ PBS
+V5 ondersteunt GC, Prune, Verify en Sync.
 
----
+> **V5-veiligheidswijziging:** anders dan in V4.x worden **Prune, Verify en Sync niet meer uitgevoerd als directe onderhoudsacties die door de integratie zelf worden opgebouwd**. V5 start de bijbehorende, vooraf in PBS geconfigureerde **Job**. Daardoor blijven de PBS-beleidsregels leidend, vooral de retentieregels van een Prune Job die bepalen welke backups verwijderd mogen worden.
 
-### ✔ 3. Controleer de rechten van de gebruiker of API‑token
-De gebruiker moet beschikken over:
+**GC blijft bewust een directe datastore-actie.** Garbage Collection maakt niet-gerefereerde ruimte vrij en is daarom nuttig voor Home Assistant-automatiseringen wanneer de backupruimte laag wordt.
 
-- PVE: `PVEAdmin`  
-- PBS: `Administrator`
+Prune, Verify en Sync vereisen respectievelijk een geconfigureerde **Prune Job, Verify Job of Sync Job** in PBS. Ontbreekt de benodigde Job, dan **geeft de integratie een fout en voert zij geen directe alternatieve operatie uit**. Dit is bewust veiligheidsgedrag, geen storing.
 
-Rechten moeten worden toegewezen op de root `/`.
+HA-acties worden via UPID tot het werkelijke resultaat gevolgd. Meerdere PBS-servers hebben persistente identiteiten.
 
----
+## 🛡️ Gedeeltelijke storingen
+Een oude waarde tijdens een API-probleem kan bewust zijn: V5 bewaart laatste geldige sectiedata tot verse data terugkeert.
 
-### ✔ 4. Controleer of het token is ingeschakeld
-In Proxmox → Datacenter → Permissions → API Tokens  
-Moet **Enabled: Yes** staan.
+## 🎨 Dashboard
+Optioneel. Vereist V5, Card Mod en `/proxmox_sensors/proxmox-dashboard.js`. **Take Control** maakt aanpassing mogelijk.
 
----
+## 🧾 Voor een issue
+Controleer verbinding, credentials, token, rechten, HA-herstart, sidecar indien relevant en logs. Controleer bij Prune/Verify/Sync-fouten ook of de bijbehorende PBS Job bestaat en correct is geconfigureerd. Verwijder wachtwoorden en Token Secrets uit screenshots/logs.
 
-## 🔑 “Permission denied”, zelfs als het token correct is
+## Bekende beperkingen
+- geen VM-schijfpercentage
+- managed PBS kan minder data bieden
+- hardware hangt af van host/drivers/sidecar
+- brondevice kan na migratie tijdelijk leeg zijn
 
-Dit komt meestal door:
-
-### ✔ 1. Het token heeft geen rechten op `/`
-Rechten moeten worden toegewezen op `/ (root)`  
-Niet op een specifieke node.
-
-### ✔ 2. Het token behoort tot een gebruiker zonder rechten
-De gebruiker moet de rol `PVEAdmin` of `Administrator` hebben.
-
----
-
-## 🌐 De integratie detecteert mijn Tuxis PBS niet
-
-Dit is normaal.
-
-Tuxis‑PBS‑servers geven **geen interne systeemstatistieken** vrij via de API:
-
-- datastore‑ruimte  
-- schijfgebruik  
-- RRD‑statistieken  
-- node‑hardware  
-- temperatuur  
-- SMART  
-- CPU/RAM  
-
-Dit is geen fout in de integratie.  
-Tuxis blokkeert deze endpoints bewust.
-
-De integratie herkent automatisch een Tuxis PBS en verbergt niet‑beschikbare sensoren.
-
----
-
-## 📦 Ik zie geen datastore‑ruimte sensoren in PBS
-
-### ✔ Als je PBS van Tuxis is → deze gegevens zijn niet beschikbaar
-Tuxis blokkeert het endpoint dat de datastore‑status teruggeeft.
-
-Zonder dit endpoint zijn de volgende gegevens niet beschikbaar:
-
-- totale ruimte  
-- vrije ruimte  
-- gebruikspercentage  
-- deduplicatie  
-- chunks  
-- GC  
-
----
-
-## 🌡️ Temperatuursensoren verschijnen niet in PVE
-
-### ✔ 1. `lm-sensors` moet op de node zijn geïnstalleerd  
-### ✔ 2. `sensors-detect` moet worden uitgevoerd  
-### ✔ 3. De aanbevolen modules moeten worden geladen  
-Voorbeeld:
-
-modprobe coretemp  
-modprobe nct6775  
-
-### ✔ 4. Er moet een systemd‑service worden aangemaakt  
-Zodat de sensoren na een reboot blijven werken.
-
----
-
-## 🖥️ NVMe/SSD/HDD‑sensoren verschijnen niet
-
-### ✔ 1. De schijf moet temperatuurondersteuning bieden  
-Sommige OEM‑modellen geven geen sensorgegevens vrij.
-
-### ✔ 2. Virtuele NVMe‑schijven in VM’s hebben geen sensoren  
-Alleen fysieke hardware ondersteunt dit.
-
-### ✔ 3. Tuxis PBS toont geen schijfsensoren  
-Beperking van de provider.
-
----
-
-## 🧠 Mijn VM’s of containers verschijnen niet
-
-### ✔ 1. Controleer de gebruikersrechten  
-De gebruiker moet de rol `PVEAdmin` hebben.
-
-### ✔ 2. Bij clusters  
-Je moet verbinding maken met de **hoofdnodes**, niet met een secundaire node.
-
----
-
-## 🔄 De integratie werkt langzaam bij het updaten
-
-Dit is normaal.
-
-De integratie gebruikt een interne coördinator om:
-
-- API‑overbelasting te voorkomen  
-- de belasting op de node te verminderen  
-- de prestaties te verbeteren  
-
-De standaard update‑interval is 10 seconden (aanpasbaar).
-
----
-
-## 🧩 Kan ik meerdere PVE‑ en PBS‑servers gebruiken?
-
-Ja.  
-De integratie ondersteunt meerdere instanties, elk met een eigen token.
-
----
-
-## 🔒 Zijn API‑tokens veilig?
-
-Ja.
-
-De integratie:
-
-- slaat geen wachtwoorden op  
-- gebruikt alleen tokens  
-- voert geen commando’s uit op de server  
-- wijzigt geen Proxmox‑configuratie  
-- opent geen extra poorten  
-
----
-
-## 🧹 Hoe verwijder ik oude sensoren?
-
-Home Assistant verwijdert automatisch verweesde entiteiten.
-
-Wil je handmatig opschonen:
-
-1. Verwijder de integratie  
-2. Herstart Home Assistant  
-3. Voeg de integratie opnieuw toe  
-
----
-
-## 🛠️ Waar kan ik problemen melden?
-
-Open een issue op GitHub met:
-
-- HA‑versie  
-- Proxmox‑versie  
-- relevante logs  
-- stappen om het probleem te reproduceren  
-- servertype (PVE, PBS, Tuxis, enz.)  
-
----
-
-# 🧾 Checklist voordat je een issue opent
-
-Deze lijst lost 90% van de problemen op:
-
-### ✔ 1. Kun je Proxmox openen in je browser?  
-Zo niet, dan kan de integratie dat ook niet.
-
-### ✔ 2. Gebruik je alleen domein/IP?  
-Geen `http://`, `https://` of poorten.
-
-### ✔ 3. Is het API‑token ingeschakeld?  
-Moet **Enabled: Yes** tonen.
-
-### ✔ 4. Heeft de gebruiker rechten op `/`?  
-Rechten moeten op `/ (root)` worden toegewezen.
-
-### ✔ 5. Is `lm-sensors` geïnstalleerd en geconfigureerd?  
-Zonder dit pakket verschijnen er geen hardware‑sensoren.
-
-### ✔ 6. Is je PBS van Tuxis?  
-Dan zijn interne statistieken niet beschikbaar.
-
-### ✔ 7. Heb je Home Assistant herstart na het wijzigen van rechten?  
-HA gebruikt oude rechten uit cache.
-
-### ✔ 8. Zijn er fouten in de HA‑logs?  
-Controleer het gedeelte “Integraties”.
-
-### ✔ 9. Heb je de incognito‑modus geprobeerd?  
-Het HA‑frontend cachet bestanden zeer lang.
-
----
-
-# 🚫 Bekende Beperkingen
-
-Deze beperkingen zijn geen fouten van de integratie, maar beperkingen van Proxmox of de provider.
-
----
-
-### 🔒 1. Tuxis PBS
-
-Tuxis‑PBS‑servers geven geen:
-
-- datastore‑ruimte  
-- schijfgebruik  
-- deduplicatie  
-- chunks  
-- RRD‑statistieken  
-- hardware‑informatie  
-- temperatuur  
-- SMART  
-- CPU/RAM  
-
-De integratie verbergt deze sensoren automatisch.
-
----
-
-### 🧊 2. Hardware‑sensoren in virtuele machines
-
-VM’s geven geen echte sensorgegevens vrij:
-
-- temperaturen  
-- ventilatoren  
-- spanningen  
-- SMART  
-
-Alleen fysieke hardware ondersteunt dit.
-
----
-
-### 📦 3. NVMe/SSD zonder sensoren
-
-Sommige OEM‑modellen of RAID‑controllers geven geen temperatuur‑ of SMART‑gegevens vrij.
-
----
-
-### 🔐 4. Tokens zonder rechten op `/`
-
-Als rechten op een node worden toegewezen in plaats van op `/`, blokkeert Proxmox de API.
-
----
-
-### 🕒 5. Update‑intervallen
-
-De integratie gebruikt een minimuminterval om API‑overbelasting te voorkomen.  
-Het is normaal dat waarden enkele seconden vertraagd worden bijgewerkt.
-
----
-
-### 🧩 6. Proxmox‑clusters
-
-Je moet verbinding maken met de **hoofdnodes** van het cluster.  
-Secundaire nodes bieden niet de volledige API.
-
----
-
-### 🌐 7. Zelfondertekende SSL‑certificaten
-
-De integratie accepteert deze automatisch, maar sommige browsers tonen waarschuwingen.
+[⬅ Terug naar V5-documentatie](README.md)

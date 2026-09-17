@@ -10,16 +10,24 @@ from ..const import DOMAIN
 class ProxmoxBaseSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, sensor_id, name, unit, unique_id, node=None):
+    def __init__(
+        self, coordinator, sensor_id, name, unit, unique_id, node=None, id_scope=None
+    ):
         super().__init__(coordinator)
         self._sensor_id = sensor_id
         self._node = node.lower() if node else "proxmox_server"
         if name is not None:
             self._attr_name = name
         self._attr_native_unit_of_measurement = unit
-        server_id = coordinator.config_entry.data.get("server_id", "default").lower()
 
-        full_id = f"pve_{server_id}_{unique_id}"
+        if id_scope:
+            full_id = f"pve_{id_scope}_{unique_id}"
+        else:
+            server_id = coordinator.config_entry.data.get(
+                "server_id", "default"
+            ).lower()
+            full_id = f"pve_{server_id}_{unique_id}"
+
         self._attr_unique_id = full_id.lower().replace(" ", "_")
 
     @property

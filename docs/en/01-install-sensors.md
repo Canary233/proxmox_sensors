@@ -1,68 +1,72 @@
-# 🚀 Step 1: Sensor Installation and Configuration
+# 🌡️ Step 1: Hardware Sensors and Sidecar Setup
 
-This guide explains how to prepare the Proxmox node to expose hardware data and allow Home Assistant to obtain temperatures, physical sensors, and SMART disk attributes.
+This guide prepares a Proxmox VE node so **Proxmox Extended Sensors V5** can read hardware information that is not exposed by the standard Proxmox API.
 
-This data is used by the integration to provide **advanced monitoring and System Insight (V3/V4)**.
+The hardware sidecar is used for data such as temperatures, memory information, mounted disks and SMART details. V5 also exposes a **Sidecar Status** diagnostic entity so Home Assistant can report whether these endpoints are healthy.
 
 ---
 
-## 1. Installing Dependencies
+## 1. Install the required packages
 
-To enable all hardware and SMART sensors, install:
+Install the hardware and SMART utilities on the Proxmox host:
 
-- **lm-sensors** → CPU, motherboard, chipset, VRM, fans  
-- **smartmontools** → SMART information for HDD, SSD and NVMe  
-
+```bash
 apt update && apt install lm-sensors smartmontools -y
+```
 
-## 2. Hardware Detection
+- **lm-sensors** → CPU, motherboard, chipset, VRM, fan and other supported sensor data
+- **smartmontools** → SMART information for HDD, SSD and supported NVMe devices
 
-* **Run the wizard:**
+---
+
+## 2. Detect hardware sensors
+
+Run:
 
 ```bash
 sensors-detect
-
 ```
 
-Answer **YES** (or press Enter) to all questions.
-
-When finished, the system will detect the necessary modules (for example: coretemp on Intel CPUs).
-
-## 3. Module Persistence
-
-At the end of the process, you will see this prompt:
-
-Do you want to add these lines automatically to /etc/modules? (yes/NO)
+Follow the wizard and enable the modules appropriate for your hardware.
 
 > [!CAUTION]
-> **You must manually type `yes` and press Enter.** If you only press Enter, `NO` will be selected by default and sensors will not load after reboot.
+> At the end of `sensors-detect`, read the prompt carefully. If it asks whether detected modules should be added to `/etc/modules`, make sure the required modules are saved so they also load after reboot.
 
-## 4. Immediate Verification
+---
 
-To activate sensors without rebooting:
+## 3. Verify `lm-sensors`
+
+Run:
+
+```bash
+sensors
+```
+
+You should see the sensors exposed by your hardware and kernel drivers.
+
+If your Intel system uses `coretemp` and it has not loaded automatically, you can test it with:
 
 ```bash
 modprobe coretemp
 sensors
-
 ```
 
-## 🚀 Step 5: Installing the Sensor Server (API Bridge)
+Do not force `coretemp` on systems that use a different hardware sensor driver.
 
-The official Proxmox API does not expose all hardware sensors.
-Therefore, this integration uses a small service that acts as a bridge.
+---
 
-5.1. **Download and install the script**
-Run these commands on your Proxmox server terminal:
+## 4. Install the Proxmox Sensors sidecar
+
+The standard Proxmox API does not expose all of the hardware information used by the integration, so V5 uses the project sidecar service.
+
+Download the script:
 
 ```bash
 wget https://raw.githubusercontent.com/Javisen/proxmox_sensors/main/scripts/pve-sensors-api.py -O /usr/local/bin/pve-sensors-api.py
 chmod +x /usr/local/bin/pve-sensors-api.py
 ```
 
-5.2. **Configure as a system service**
-
-Create the service file:
+Create the systemd service:
 
 ```bash
 cat <<EOF > /etc/systemd/system/pve-sensors.service
@@ -82,29 +86,57 @@ ProtectSystem=full
 [Install]
 WantedBy=default.target
 EOF
-
 ```
 
-5.3. **Activation**
+Enable and start it:
 
 ```bash
 systemctl daemon-reload
 systemctl enable --now pve-sensors.service
 ```
 
-5.4. **Final verification**
-Open in your browser:
+---
 
+## 5. Verify the sidecar
+
+Check the service:
+
+```bash
+systemctl status pve-sensors.service
 ```
+
+Then open:
+
+```text
 http://YOUR_PROXMOX_IP:9000/sensors
 ```
 
-If a JSON with temperatures and sensors appears, the service is working correctly.
+If the endpoint returns JSON data, the sidecar is responding.
+
+---
+
+## 6. What V5 does when the sidecar fails
+
+A temporary sidecar failure does not force all previously valid hardware entities to disappear immediately.
+
+V5 preserves the last valid hardware data where possible and exposes one **Sidecar Status** sensor per PVE node with the state of:
+
+- Memory
+- Mounts
+- Sensors
+- SMART
+
+Typical Sidecar Status states are:
+
+- `ok`
+- `degraded`
+- `error`
+- `unknown`
+
+---
 
 ## ✔ Conclusion
 
-Once:
-- sensors returns data correctly
-- The pve-sensors.service is active
+Once `lm-sensors`, SMART support and `pve-sensors.service` are working, Home Assistant can obtain the additional hardware information supported by your Proxmox host.
 
-Home Assistant will be able to obtain all hardware data automatically, without additional configuration.
+Next: [02. Proxmox User and Permissions](02-proxmox-config.md)

@@ -19,8 +19,20 @@ from .const import (
     CONF_VERIFY_SSL,
 )
 from .api import ProxmoxClient
+from .logic.guest_selection import (
+    _entry_cluster_id, get_entry_guest_selection, get_effective_guest_selections,
+    guest_selection_entries, selection_guest_ids, plan_guest_selection,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class GuestSelectionError(ValueError):
+    """An expected, user-actionable guest selection validation failure."""
+
+    def __init__(self, translation_key: str):
+        self.translation_key = translation_key
+        super().__init__(translation_key)
 
 
 class ProxmoxOptionsFlow(config_entries.OptionsFlow):
@@ -98,6 +110,70 @@ class ProxmoxOptionsFlow(config_entries.OptionsFlow):
             ),
         )
 
+    async def _guest_inventory(self, client):
+        """Validate cluster inventory against fresh lists from every visible node."""
+        resources = await client.get(self.hass, "cluster/resources", raise_errors=True)
+        if not isinstance(resources, list) or any(not isinstance(r, dict) for r in resources):
+            raise GuestSelectionError("guest_inventory_changed")
+        nodes = {r.get("node") for r in resources if r.get("type") == "node"}
+        if not nodes or any(not isinstance(n, str) or not n for n in nodes):
+            raise GuestSelectionError("guest_inventory_changed")
+        entries = guest_selection_entries(self.hass, self.config_entry)
+        expected = {e.data.get(CONF_NODE) for e in entries}
+        runtime = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        coordinator = runtime.get("coordinator")
+        previous = getattr(coordinator, "data", None) or {}
+        expected.update(previous.get("cluster_nodes", []))
+        if not expected <= nodes:
+            raise GuestSelectionError("guest_inventory_changed")
+        if len(nodes) > 1 and not _entry_cluster_id(self.hass, self.config_entry):
+            raise GuestSelectionError("guest_discovery_unavailable")
+        # Do not silently omit a configured sibling with unresolved membership.
+        for candidate in self.hass.config_entries.async_entries(DOMAIN):
+            if (candidate.data.get(CONF_PLATFORM_TYPE) == "PVE"
+                    and candidate.data.get(CONF_NODE) in nodes
+                    and not _entry_cluster_id(self.hass, candidate)
+                    and candidate.entry_id != self.config_entry.entry_id):
+                raise GuestSelectionError("guest_discovery_unavailable")
+        choices = {"vms": {}, "cts": {}}
+        locations = {"vms": {}, "cts": {}}
+        for node in sorted(nodes):
+            for field, resource_type, endpoint in (("vms", "qemu", "qemu"), ("cts", "lxc", "lxc")):
+                guests = await client.get(self.hass, f"nodes/{node}/{endpoint}", raise_errors=True)
+                if not isinstance(guests, list) or any(
+                    not isinstance(g, dict) or not str(g.get("vmid", "")).isdecimal() for g in guests
+                ):
+                    raise GuestSelectionError("guest_discovery_unavailable")
+                ids = {str(g["vmid"]) for g in guests}
+                inventory_ids = {str(r.get("vmid")) for r in resources
+                                 if r.get("type") == resource_type and r.get("node") == node}
+                if ids != inventory_ids or ids & choices[field].keys():
+                    raise GuestSelectionError("guest_inventory_changed")
+                choices[field].update({str(g["vmid"]): f"{g['vmid']} ({g.get('name', resource_type)}) — {node}"
+                                       for g in guests})
+                locations[field].update({vmid: node for vmid in ids})
+        if any(r.get("type") in ("qemu", "lxc") and r.get("node") not in nodes for r in resources):
+            raise GuestSelectionError("guest_inventory_changed")
+        return {**choices, "locations": locations}
+
+    def _guest_selection_snapshot(self):
+        return {e.entry_id: (get_entry_guest_selection(e, "selected_vms", []),
+                             get_entry_guest_selection(e, "selected_cts", []))
+                for e in guest_selection_entries(self.hass, self.config_entry)}
+
+    def _previous_guest_ids(self, field):
+        ids = set()
+        resource_type = "qemu" if field == "vms" else "lxc"
+        for entry in guest_selection_entries(self.hass, self.config_entry):
+            runtime = self.hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+            data = getattr(runtime.get("coordinator"), "data", None) or {}
+            guests = list((data.get(field) or {}).values())
+            guests.extend(r for r in data.get("cluster_resources", [])
+                          if isinstance(r, dict) and r.get("type") == resource_type)
+            ids.update(str(g["vmid"]) for g in guests
+                       if isinstance(g, dict) and str(g.get("vmid", "")).isdecimal())
+        return ids
+
     # ===== PVE OPTIONS =======================================
 
     async def async_step_pve(self, user_input=None) -> FlowResult:
@@ -106,7 +182,9 @@ class ProxmoxOptionsFlow(config_entries.OptionsFlow):
         options = self.config_entry.options or {}
         wol_mac_map = options.get("wol_macs", {})
 
-        # Get cluster nodes for WOL fields
+        current_node = conf[CONF_NODE]
+
+        # Get cluster nodes
         cluster_nodes = [conf.get(CONF_NODE, "")]
         try:
             entry_data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
@@ -119,37 +197,84 @@ class ProxmoxOptionsFlow(config_entries.OptionsFlow):
         self._cluster_nodes = cluster_nodes
 
         if user_input is not None:
-            new_data = dict(conf)
-            new_data.update(
-                {
-                    CONF_VERIFY_SSL: user_input.get(CONF_VERIFY_SSL, False),
-                    "enable_lm_sensors": user_input.get("enable_lm_sensors", True),
-                    "enable_physical_disks": user_input.get(
-                        "enable_physical_disks", True
-                    ),
-                    "enable_smart_monitoring": user_input.get(
-                        "enable_smart_monitoring", True
-                    ),
-                    "enable_node_controls": user_input.get(
-                        "enable_node_controls", False
-                    ),
-                    "selected_vms": user_input.get("vms", []),
-                    "selected_cts": user_input.get("cts", []),
-                    "selected_storage": user_input.get("storage", []),
-                }
-            )
-            wol_macs = {
-                node: user_input.get(f"wol_mac_{node}")
-                for node in self._cluster_nodes
-                if user_input.get(f"wol_mac_{node}")
-            }
+            plans = {}
+            changed_fields = [field for field in ("vms", "cts") if field in user_input
+                              and set(user_input[field]) != set(getattr(self, "_guest_defaults", {}).get(field, []))]
+            if changed_fields:
+                try:
+                    if not getattr(self, "_guest_choices", None):
+                        raise GuestSelectionError("guest_discovery_unavailable")
+                    if self._guest_snapshot != self._guest_selection_snapshot():
+                        raise GuestSelectionError("guest_selection_changed")
+                    fresh = await self._guest_inventory(self._guest_client)
+                    if self._guest_snapshot != self._guest_selection_snapshot():
+                        raise GuestSelectionError("guest_selection_changed")
+                    if any(set(fresh[field]) != set(self._guest_choices[field]) for field in ("vms", "cts")):
+                        raise GuestSelectionError("guest_inventory_changed")
+                    if fresh["locations"] != self._guest_choices["locations"]:
+                        raise GuestSelectionError("guest_inventory_changed")
+                    entries = guest_selection_entries(self.hass, self.config_entry)
+                    effective = get_effective_guest_selections(
+                        self.hass, self.config_entry, _entry_cluster_id(self.hass, self.config_entry),
+                        get_entry_guest_selection(self.config_entry, "selected_vms", []),
+                        get_entry_guest_selection(self.config_entry, "selected_cts", []),
+                    )
+                    for field in changed_fields:
+                        chosen = selection_guest_ids(user_input[field])
+                        visible = set(self._guest_visible[field])
+                        if chosen is None or not chosen <= visible:
+                            raise GuestSelectionError("invalid_guest_selection")
+                        selected = selection_guest_ids(effective[0 if field == "vms" else 1])
+                        if selected is None:
+                            selected = set(fresh[field])
+                        # Apply the local form as a patch to the cluster selection.
+                        cluster_chosen = ((selected & set(fresh[field])) - visible) | chosen
+                        plans["selected_" + field] = plan_guest_selection(
+                            entries, "selected_" + field, cluster_chosen, fresh[field], True,
+                            self._guest_previous[field] | self._previous_guest_ids(field),
+                        )
+                except GuestSelectionError as err:
+                    _LOGGER.warning("Guest selection not saved: %s", err.translation_key)
+                    return self.async_show_form(step_id="init", data_schema=self._pve_schema,
+                                                errors={"base": err.translation_key})
+                except Exception:
+                    _LOGGER.exception("Unexpected error while saving guest selections")
+                    return self.async_show_form(step_id="init", data_schema=self._pve_schema,
+                                                errors={"base": "guest_selection_failed"})
+
+            # Discovery awaited above; preserve unrelated options changed meanwhile.
+            new_data = dict(self.config_entry.data)
+            options = self.config_entry.options or {}
+            wol_mac_map = options.get("wol_macs", {})
+            for key in (CONF_VERIFY_SSL, "enable_lm_sensors", "enable_physical_disks",
+                        "enable_smart_monitoring", "enable_node_controls"):
+                if key in user_input:
+                    new_data[key] = user_input[key]
+            if "storage" in user_input:
+                new_data["selected_storage"] = user_input["storage"]
+            new_options = dict(options)
+            wol_macs = dict(wol_mac_map)
+            if "wol_mac" in user_input:
+                value = user_input["wol_mac"]
+                if value:
+                    wol_macs[current_node] = value
+                else:
+                    wol_macs.pop(current_node, None)
+            if wol_macs or "wol_macs" in options:
+                new_options["wol_macs"] = wol_macs
+            # No await between validation and the sibling writes.
+            for target in guest_selection_entries(self.hass, self.config_entry):
+                target_options = new_options if target.entry_id == self.config_entry.entry_id else dict(target.options)
+                for key, plan in plans.items():
+                    if target.entry_id in plan:
+                        target_options[key] = list(plan[target.entry_id])
+                if target.entry_id != self.config_entry.entry_id and target_options != dict(target.options):
+                    self.hass.config_entries.async_update_entry(target, options=target_options)
             self.hass.config_entries.async_update_entry(
-                self.config_entry,
-                data=new_data,
-                options={"wol_macs": wol_macs},
+                self.config_entry, data=new_data, options=new_options,
             )
             await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-            return self.async_create_entry(title="", data={})
+            return self.async_create_entry(title="", data=new_options)
 
         # Load resources via API
         client = ProxmoxClient(
@@ -163,12 +288,19 @@ class ProxmoxOptionsFlow(config_entries.OptionsFlow):
         )
 
         try:
-            vms_data = await client.get_vms(self.hass, conf[CONF_NODE]) or []
-            cts_data = await client.get_containers(self.hass, conf[CONF_NODE]) or []
+            self._guest_client = client
+            self._guest_choices = await self._guest_inventory(client)
+            self._guest_visible = {
+                field: {vmid: label for vmid, label in self._guest_choices[field].items()
+                        if self._guest_choices["locations"][field][vmid] == conf[CONF_NODE]}
+                for field in ("vms", "cts")
+            }
+            self._guest_snapshot = self._guest_selection_snapshot()
+            self._guest_previous = {field: self._previous_guest_ids(field) for field in ("vms", "cts")}
             storage_data = await client.get_storages(self.hass, conf[CONF_NODE]) or []
 
             detected_macs = {}
-            for node in cluster_nodes:
+            for node in (current_node,):
                 try:
                     net_data = await client.get_node_network(self.hass, node) or []
                     for iface in net_data:
@@ -178,16 +310,8 @@ class ProxmoxOptionsFlow(config_entries.OptionsFlow):
                 except Exception:
                     continue
 
-            vm_options = {
-                str(v["vmid"]): f"{v['vmid']} ({v.get('name', 'VM')})"
-                for v in vms_data
-                if "vmid" in v
-            }
-            ct_options = {
-                str(c["vmid"]): f"{c['vmid']} ({c.get('name', 'CT')})"
-                for c in cts_data
-                if "vmid" in c
-            }
+            vm_options = self._guest_visible["vms"]
+            ct_options = self._guest_visible["cts"]
 
             st_options = {}
             for s in storage_data or []:
@@ -209,17 +333,18 @@ class ProxmoxOptionsFlow(config_entries.OptionsFlow):
                         continue
                 st_options[st_name] = st_name
 
-            selected_vms = [
-                v
-                for v in conf.get("selected_vms", list(vm_options.keys()))
-                if v in vm_options
-            ]
-
-            selected_cts = [
-                c
-                for c in conf.get("selected_cts", list(ct_options.keys()))
-                if c in ct_options
-            ]
+            effective = get_effective_guest_selections(
+                self.hass, self.config_entry, _entry_cluster_id(self.hass, self.config_entry),
+                get_entry_guest_selection(self.config_entry, "selected_vms", []),
+                get_entry_guest_selection(self.config_entry, "selected_cts", []),
+            )
+            self._guest_defaults = {}
+            for field, selection in zip(("vms", "cts"), effective):
+                ids = selection_guest_ids(selection)
+                self._guest_defaults[field] = sorted(self._guest_visible[field] if ids is None
+                                                      else ids & self._guest_visible[field].keys())
+            selected_vms = self._guest_defaults["vms"]
+            selected_cts = self._guest_defaults["cts"]
 
             selected_storage = [
                 s
@@ -229,15 +354,12 @@ class ProxmoxOptionsFlow(config_entries.OptionsFlow):
 
             wol_fields = {
                 vol.Optional(
-                    f"wol_mac_{node}",
-                    default=wol_mac_map.get(node) or detected_macs.get(node, ""),
+                    "wol_mac",
+                    default=wol_mac_map.get(current_node) or detected_macs.get(current_node, ""),
                 ): str
-                for node in cluster_nodes
             }
 
-            return self.async_show_form(
-                step_id="init",
-                data_schema=vol.Schema(
+            self._pve_schema = vol.Schema(
                     {
                         vol.Optional("vms", default=selected_vms): cv.multi_select(
                             vm_options
@@ -270,15 +392,15 @@ class ProxmoxOptionsFlow(config_entries.OptionsFlow):
                         ): bool,
                         **wol_fields,
                     }
-                ),
-            )
+                )
+            return self.async_show_form(step_id="init", data_schema=self._pve_schema)
 
-        except Exception as err:
-            _LOGGER.warning("PVE options fallback (API error): %s", err)
-            return self.async_show_form(
-                step_id="init",
-                data_schema=vol.Schema(
+        except Exception:
+            _LOGGER.exception("PVE options fallback: guest discovery is unavailable")
+            self._guest_choices = None
+            self._pve_schema = vol.Schema(
                     {
+                        vol.Optional("wol_mac", default=wol_mac_map.get(current_node, "")): str,
                         vol.Optional(
                             "enable_physical_disks",
                             default=conf.get("enable_physical_disks", True),
@@ -300,5 +422,6 @@ class ProxmoxOptionsFlow(config_entries.OptionsFlow):
                             default=conf.get(CONF_VERIFY_SSL, False),
                         ): bool,
                     }
-                ),
-            )
+                )
+            return self.async_show_form(step_id="init", data_schema=self._pve_schema,
+                                        errors={"base": "guest_discovery_unavailable"})

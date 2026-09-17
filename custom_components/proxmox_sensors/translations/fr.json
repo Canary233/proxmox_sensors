@@ -77,12 +77,20 @@
       "unknown": "Erreur inattendue. Vérifiez les logs de Home Assistant."
     },
     "abort": {
+      "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "Ce nœud est déjà configuré.",
       "no_data": "Aucune donnée du cluster reçue. Vérifiez votre configuration.",
       "cluster_no_options": "Les paramètres du cluster sont gérés depuis la configuration du nœud PVE."
     }
   },
   "options": {
+    "error": {
+      "guest_discovery_unavailable": "Guest discovery is unavailable. Guest selections will be preserved.",
+      "guest_selection_changed": "Guest selections changed in another Options flow. Reopen Options and try again.",
+      "guest_inventory_changed": "The guest inventory changed. Reopen Options and try again.",
+      "invalid_guest_selection": "Only guests shown for this node can be selected.",
+      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs."
+    },
     "abort": {
       "pbs_no_options": "Ce serveur PBS n'a pas d'options configurables.",
       "cluster_no_options": "Les paramètres du cluster sont gérés depuis la configuration du nœud PVE.",
@@ -394,6 +402,7 @@
       "node_cpu_info": {
         "name": "Informations CPU"
       },
+      "node_ksm_status": {"name": "KSM Status"},
       "node_ksm_shared": {
         "name": "Mémoire partagée KSM"
       },
@@ -523,6 +532,12 @@
       "proxmox_node": {
         "name": "État du nœud"
       },
+      "sidecar_status": {"name": "Sidecar Status"},
+      "replication_jobs": {"name": "Replication Jobs"},
+      "replication_status": {"name": "Replication Status"},
+      "replication_last_sync": {"name": "Replication {job_id} Last Replication"},
+      "replication_next_sync": {"name": "Replication {job_id} Next Replication"},
+      "replication_duration": {"name": "Replication {job_id} Duration"},
       "proxmox_storages": {
         "name": "Stockages"
       },
@@ -636,6 +651,10 @@
       "name": "Proxmox : Lancer la sauvegarde",
       "description": "Sauvegarde des VM et/ou conteneurs sélectionnés vers le stockage spécifié.",
       "fields": {
+        "entry_id": {
+          "name": "ID de l’entrée PVE",
+          "description": "ID facultatif de l’entrée de configuration pour distinguer les nœuds portant le même nom."
+        },
         "node": {
           "name": "Nœud",
           "description": "Nom du nœud (ex. server)"
@@ -662,7 +681,7 @@
         },
         "delay_between": {
           "name": "Intervalle entre sauvegardes",
-          "description": "Secondes d'attente entre les sauvegardes"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         }
       }
     },
@@ -670,6 +689,10 @@
       "name": "Proxmox : Sauvegarde massive",
       "description": "Sauvegarde de toutes les VM et/ou conteneurs sur le nœud sélectionné.",
       "fields": {
+        "entry_id": {
+          "name": "ID de l’entrée PVE",
+          "description": "ID facultatif de l’entrée de configuration pour distinguer les nœuds portant le même nom."
+        },
         "node": {
           "name": "Nœud",
           "description": "Nom du nœud (ex. pve)"
@@ -692,7 +715,7 @@
         },
         "delay_between": {
           "name": "Intervalle entre sauvegardes",
-          "description": "Secondes entre les sauvegardes (0 = aucun intervalle)"
+          "description": "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
         },
         "include_vms": {
           "name": "Inclure les VM",
@@ -708,6 +731,10 @@
       "name": "Proxmox : Éteindre le nœud",
       "description": "Demande confirmation et éteint le nœud sélectionné.",
       "fields": {
+        "entry_id": {
+          "name": "ID de l’entrée PVE",
+          "description": "ID facultatif de l’entrée de configuration pour distinguer les nœuds portant le même nom."
+        },
         "node": {
           "name": "Nœud",
           "description": "Nom du nœud (ex. pve)"
@@ -722,6 +749,10 @@
       "name": "Proxmox : Redémarrer le nœud",
       "description": "Demande confirmation et redémarre le nœud sélectionné.",
       "fields": {
+        "entry_id": {
+          "name": "ID de l’entrée PVE",
+          "description": "ID facultatif de l’entrée de configuration pour distinguer les nœuds portant le même nom."
+        },
         "node": {
           "name": "Nœud",
           "description": "Nom du nœud (ex. pve)"
@@ -732,15 +763,24 @@
         }
       }
     },
+    "dashboard_preview": {
+      "name": "Dashboard preview",
+      "description": "Return a read-only inventory and static dashboard plan for all Proxmox entries. Does not install or modify dashboards."
+    },
     "wake_node": {
       "name": "Proxmox : Réveiller le nœud",
       "description": "Réveille un nœud Proxmox via Wake-on-LAN.",
       "fields": {
+        "entry_id": {
+          "name": "ID de l’entrée PVE",
+          "description": "ID facultatif de l’entrée de configuration pour distinguer les nœuds portant le même nom."
+        },
         "node": {
           "name": "Nœud"
         },
         "mac": {
-          "name": "Adresse MAC"
+          "name": "Adresse MAC",
+          "description": "La MAC explicite est prioritaire ; sinon, la MAC du nœud configurée dans l’entrée sélectionnée est utilisée."
         }
       }
     }

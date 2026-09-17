@@ -2,6 +2,12 @@ create_vzdump_backup:
   name: "Proxmox: Start Backup"
   description: "Performs a backup of selected VMs and/or CTs to the chosen storage."
   fields:
+    entry_id:
+      name: PVE entry ID
+      description: "Optional configuration entry ID to distinguish nodes with the same name."
+      required: false
+      selector:
+        text:
     node:
       name: Node
       description: "Node name (e.g., server)"
@@ -69,7 +75,7 @@ create_vzdump_backup:
 
     delay_between:
       name: Delay between backups
-      description: "Seconds to wait between backups"
+      description: "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
       required: false
       default: 0
       selector:
@@ -83,6 +89,12 @@ backup_all:
   name: "Proxmox: Massive Backup"
   description: "Performs backup of all VMs and/or CTs on the selected node."
   fields:
+    entry_id:
+      name: PVE entry ID
+      description: "Optional configuration entry ID to distinguish nodes with the same name."
+      required: false
+      selector:
+        text:
     node:
       name: Node
       description: "Node name (e.g., pve)"
@@ -138,7 +150,7 @@ backup_all:
           mode: box
     delay_between:
       name: Delay between backups
-      description: "Seconds to wait between backups (0 = no delay)"
+      description: "Minimum interval in seconds between backup start requests. Max concurrent limits active remote tasks."
       required: false
       default: 30
       selector:
@@ -165,6 +177,12 @@ confirm_shutdown_node:
   name: "Proxmox: Shutdown Node"
   description: "Requests confirmation and shuts down the selected node."
   fields:
+    entry_id:
+      name: PVE entry ID
+      description: "Optional configuration entry ID to distinguish nodes with the same name."
+      required: false
+      selector:
+        text:
     node:
       name: Node
       description: "Node name (e.g., pve)"
@@ -183,6 +201,12 @@ confirm_reboot_node:
   name: "Proxmox: Reboot Node"
   description: "Requests confirmation and reboots the selected node."
   fields:
+    entry_id:
+      name: PVE entry ID
+      description: "Optional configuration entry ID to distinguish nodes with the same name."
+      required: false
+      selector:
+        text:
     node:
       name: Node
       description: "Node name (e.g., pve)"
@@ -197,18 +221,30 @@ confirm_reboot_node:
         boolean:
 
 
+dashboard_preview:
+  name: "Dashboard preview"
+  description: "Return a read-only inventory and static dashboard plan for all Proxmox entries. Does not install or modify dashboards."
+  fields: {}
+
 wake_node:
   name: "Proxmox: Wake Node"
   description: "Wake a Proxmox node using Wake-on-LAN"
   fields:
+    entry_id:
+      name: PVE entry ID
+      description: "Optional configuration entry ID to distinguish nodes with the same name."
+      required: false
+      selector:
+        text:
     node:
       name: Node
-      required: true
+      required: false
       selector:
         text:
     mac:
       name: MAC Address
-      required: true
+      description: "Explicit MAC takes priority; otherwise uses the selected entry's configured node MAC."
+      required: false
       example: "AA:BB:CC:DD:EE:FF"
       selector:
         text:

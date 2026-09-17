@@ -1,8 +1,10 @@
 """API for Proxmox Extended Sensors."""
 
 from typing import Any, Optional
+import asyncio
 import logging
 import requests
+import time
 import urllib3
 from proxmoxer import ProxmoxAPI
 
@@ -132,10 +134,9 @@ class ProxmoxClient:
                 status_code = _extract_status_code(err)
                 if status_code is not None:
                     _raise_for_auth_or_permission(status_code, path)
-                    LOGGER.debug(
-                        "PVE HTTP %s on validation endpoint %s", status_code, path
-                    )
-                    return None
+                    raise CannotConnect(
+                        f"PVE HTTP {status_code} while requesting {path}"
+                    ) from err
 
                 if isinstance(err, requests.exceptions.RequestException):
                     raise CannotConnect(f"PVE request failed for {path}") from err
@@ -152,6 +153,14 @@ class ProxmoxClient:
                 ),
             ):
                 LOGGER.debug("PVE node unreachable while requesting %s: %s", path, err)
+                return None
+
+            status_code = _extract_status_code(err)
+            if status_code == 403 and path.endswith("/apt/update"):
+                LOGGER.debug(
+                    "PVE update check unavailable due to missing Sys.Modify permission: %s",
+                    path,
+                )
                 return None
 
             LOGGER.error("PVE GET error on %s: %s", path, err)
@@ -171,14 +180,51 @@ class ProxmoxClient:
             LOGGER.error("PVE POST error on %s: %s", path, err)
             return None
 
-    async def get_cluster_resources(self, hass):
-        return await self.get(hass, "cluster/resources") or []
+    async def get_cluster_resources(self, hass, raise_errors: bool = False):
+        return await self.get(
+            hass, "cluster/resources", raise_errors=raise_errors
+        ) or []
 
-    async def get_cluster_tasks(self, hass):
-        return await self.get(hass, "cluster/tasks") or []
+    async def get_cluster_replication(self, hass) -> list:
+        """Return replication configuration, preserving empty success vs failure."""
+        data = await self.get(hass, "cluster/replication", raise_errors=True)
+        if not isinstance(data, list):
+            raise ValueError("Invalid cluster replication response: expected a list")
+        return data
 
-    async def get_backup_jobs(self, hass):
-        return await self.get(hass, "cluster/backup") or []
+    async def get_node_replication(self, hass, node: str) -> list:
+        """Return a complete runtime snapshot; an empty list is a success."""
+        data = await self.get(hass, f"nodes/{node}/replication", raise_errors=True)
+        if not isinstance(data, list):
+            raise ValueError("Invalid node replication response: expected a list")
+        return data
+
+    async def get_cluster_tasks(self, hass, raise_errors: bool = False):
+        return await self.get(
+            hass, "cluster/tasks", raise_errors=raise_errors
+        ) or []
+
+    async def wait_for_task(self, hass, upid: str, timeout: float = 3600, poll_interval: float = 2):
+        """Wait for a Proxmox task identified by its exact UPID."""
+        if not isinstance(upid, str) or not upid.strip():
+            raise ValueError("Invalid task UPID")
+        deadline = time.monotonic() + timeout
+        while True:
+            tasks = await self.get_cluster_tasks(hass, raise_errors=True) or []
+            for task in tasks:
+                if isinstance(task, dict) and task.get("upid") == upid:
+                    if task.get("endtime") is not None:
+                        return task
+                    break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"Timed out waiting for task {upid}")
+            await asyncio.sleep(min(poll_interval, remaining))
+
+    async def get_backup_jobs(self, hass, raise_errors: bool = False):
+        return await self.get(
+            hass, "cluster/backup", raise_errors=raise_errors
+        ) or []
 
     async def get_nodes(self, hass):
         """Return nodes in cluster."""
@@ -206,11 +252,31 @@ class ProxmoxClient:
     async def get_node_network(self, hass, node: str):
         return await self.get(hass, f"nodes/{node}/network") or []
 
-    async def get_vms(self, hass, node: str):
-        return await self.get(hass, f"nodes/{node}/qemu") or []
+    async def get_vms(self, hass, node: str, raise_errors: bool = False):
+        return (
+            await self.get(
+                hass, f"nodes/{node}/qemu", raise_errors=raise_errors
+            )
+            or []
+        )
 
-    async def get_containers(self, hass, node: str):
-        return await self.get(hass, f"nodes/{node}/lxc") or []
+    async def get_containers(self, hass, node: str, raise_errors: bool = False):
+        return (
+            await self.get(
+                hass, f"nodes/{node}/lxc", raise_errors=raise_errors
+            )
+            or []
+        )
+
+    async def get_vm_config(self, hass, node: str, vmid):
+        """Fetch a VM's config (includes 'onboot'); not present in the list
+        endpoint, so this is a separate, per-guest call."""
+        return await self.get(hass, f"nodes/{node}/qemu/{vmid}/config") or {}
+
+    async def get_ct_config(self, hass, node: str, vmid):
+        """Fetch a CT's config (includes 'onboot'); not present in the list
+        endpoint, so this is a separate, per-guest call."""
+        return await self.get(hass, f"nodes/{node}/lxc/{vmid}/config") or {}
 
     async def get_container_status(self, hass, node: str, vmid: str):
         return await self.get(hass, f"nodes/{node}/lxc/{vmid}/status/current")
@@ -244,11 +310,21 @@ class ProxmoxClient:
             return await self.get_lxc_status(hass, node, vmid)
         return None
 
-    async def get_storages(self, hass, node: str):
-        return await self.get(hass, f"nodes/{node}/storage") or []
+    async def get_storages(self, hass, node: str, raise_errors: bool = False):
+        return (
+            await self.get(
+                hass, f"nodes/{node}/storage", raise_errors=raise_errors
+            )
+            or []
+        )
 
-    async def get_disks(self, hass, node: str):
-        return await self.get(hass, f"nodes/{node}/disks/list") or []
+    async def get_disks(self, hass, node: str, raise_errors: bool = False):
+        return (
+            await self.get(
+                hass, f"nodes/{node}/disks/list", raise_errors=raise_errors
+            )
+            or []
+        )
 
     async def control_vm(self, hass, node: str, vmid: str, command: str):
         valid_vm_commands = [
@@ -326,7 +402,9 @@ class ProxmoxClient:
         data = {"command": "reboot"}
         return await self.post(hass, path, data)
 
-    async def get_lm_sensors_http(self, hass, node: str):
+    async def get_lm_sensors_http(
+        self, hass, node: str, raise_errors: bool = False
+    ):
         url = f"http://{self._host}:9000/sensors"
 
         def _fetch():
@@ -335,11 +413,15 @@ class ProxmoxClient:
                 r.raise_for_status()
                 return r.json()
             except Exception:
+                if raise_errors:
+                    raise
                 return {}
 
         return await hass.async_add_executor_job(_fetch)
 
-    async def get_smart_data_http(self, hass, node: str):
+    async def get_smart_data_http(
+        self, hass, node: str, raise_errors: bool = False
+    ):
         url = f"http://{self._host}:9000/smart"
 
         def _fetch():
@@ -348,11 +430,13 @@ class ProxmoxClient:
                 r.raise_for_status()
                 return r.json()
             except Exception:
+                if raise_errors:
+                    raise
                 return {}
 
         return await hass.async_add_executor_job(_fetch)
 
-    async def get_memory_http(self, hass, node: str):
+    async def get_memory_http(self, hass, node: str, raise_errors: bool = False):
         url = f"http://{self._host}:9000/memory"
 
         def _fetch():
@@ -361,14 +445,32 @@ class ProxmoxClient:
                 r.raise_for_status()
                 return r.json()
             except Exception:
+                if raise_errors:
+                    raise
                 return {}
 
         return await hass.async_add_executor_job(_fetch)
 
-    async def get_mounts(self, hass, node):
-        return await hass.async_add_executor_job(self._get_mounts_sync)
+    async def get_ksm_http(self, hass, node: str, raise_errors: bool = False):
+        """Get the sidecar's fixed KSM snapshot."""
+        url = f"http://{self._host}:9000/ksm"
+        def _fetch():
+            try:
+                response = requests.get(url, timeout=5)
+                response.raise_for_status()
+                return response.json()
+            except Exception:
+                if raise_errors:
+                    raise
+                return {}
+        return await hass.async_add_executor_job(_fetch)
 
-    def _get_mounts_sync(self):
+    async def get_mounts(self, hass, node, raise_errors: bool = False):
+        return await hass.async_add_executor_job(
+            self._get_mounts_sync, raise_errors
+        )
+
+    def _get_mounts_sync(self, raise_errors: bool = False):
         url = f"http://{self._host}:9000/mounts"
 
         try:
@@ -376,10 +478,17 @@ class ProxmoxClient:
             r.raise_for_status()
             return r.json()
         except Exception:
+            if raise_errors:
+                raise
             return {}
 
-    async def get_zfs_pools(self, hass, node):
-        return await self.get(hass, f"nodes/{node}/disks/zfs") or []
+    async def get_zfs_pools(self, hass, node, raise_errors: bool = False):
+        return (
+            await self.get(
+                hass, f"nodes/{node}/disks/zfs", raise_errors=raise_errors
+            )
+            or []
+        )
 
     async def start_vzdump(
         self,
@@ -424,22 +533,28 @@ class ProxmoxClient:
 
         return result
 
-    async def get_cluster_status(self, hass):
+    async def get_cluster_status(self, hass, raise_errors: bool = False):
         """Return cluster status (name, quorum, version)."""
-        data = await self.get(hass, "cluster/status") or []
+        data = await self.get(
+            hass, "cluster/status", raise_errors=raise_errors
+        ) or []
         # The API returns a list; extract the item with type=="cluster"
         for item in data:
             if isinstance(item, dict) and item.get("type") == "cluster":
                 return item
         return {}
 
-    async def get_cluster_ha_status(self, hass):
+    async def get_cluster_ha_status(self, hass, raise_errors: bool = False):
         """Return current HA manager status."""
-        return await self.get(hass, "cluster/ha/status/current") or {}
+        return await self.get(
+            hass, "cluster/ha/status/current", raise_errors=raise_errors
+        ) or {}
 
-    async def get_cluster_firewall_options(self, hass):
+    async def get_cluster_firewall_options(self, hass, raise_errors: bool = False):
         """Return cluster firewall options."""
-        return await self.get(hass, "cluster/firewall/options") or {}
+        return await self.get(
+            hass, "cluster/firewall/options", raise_errors=raise_errors
+        ) or {}
 
     def _pbs_request(
         self, method: str, path: str, data=None, raise_errors: bool = False
@@ -490,13 +605,9 @@ class ProxmoxClient:
 
             if raise_errors and r.status_code >= 400:
                 _raise_for_auth_or_permission(r.status_code, path)
-                LOGGER.debug(
-                    "PBS HTTP %s on validation endpoint %s: %s",
-                    r.status_code,
-                    path,
-                    r.text,
+                raise CannotConnect(
+                    f"PBS HTTP {r.status_code} while requesting {path}"
                 )
-                return None
 
             if r.status_code == 403:
                 return None
@@ -524,16 +635,18 @@ class ProxmoxClient:
                 raise
             return None
 
-    async def pbs_get(self, hass, path: str) -> Any:
-        return await hass.async_add_executor_job(self._pbs_request, "GET", path, None)
+    async def pbs_get(self, hass, path: str, raise_errors: bool = False) -> Any:
+        return await hass.async_add_executor_job(
+            self._pbs_request, "GET", path, None, raise_errors
+        )
 
     async def pbs_post(self, hass, path: str, data=None) -> Any:
         return await hass.async_add_executor_job(
             self._pbs_request, "POST", path, data or {}
         )
 
-    async def get_pbs_datastores(self, hass):
-        data = await self.pbs_get(hass, "admin/datastore")
+    async def get_pbs_datastores(self, hass, raise_errors: bool = False):
+        data = await self.pbs_get(hass, "admin/datastore", raise_errors=raise_errors)
         return (
             [d["store"] for d in data if isinstance(d, dict) and "store" in d]
             if data
@@ -549,29 +662,93 @@ class ProxmoxClient:
 
         return None
 
-    async def get_pbs_datastore_status(self, hass, store: str):
-        return await self.pbs_get(hass, f"admin/datastore/{store}/status") or {}
+    async def get_pbs_instance_id(self, hass, raise_errors: bool = False):
+        """Get stable PBS instance identity when supported by the server."""
+        data = await self.pbs_get(
+            hass, "nodes/localhost/identity", raise_errors=raise_errors
+        )
 
-    async def get_pbs_datastore_usage(self, hass, store: str):
-        return await self.pbs_get(hass, f"admin/datastore/{store}/gc") or {}
+        if isinstance(data, dict):
+            return data.get("pbs-instance-id") or data.get("pbs_instance_id")
 
-    async def get_pbs_tasks(self, hass):
-        return await self.pbs_get(hass, "nodes/localhost/tasks") or []
+        return None
 
-    async def get_pbs_version(self, hass):
-        return await self.pbs_get(hass, "version") or {}
+    async def get_pbs_datastore_status(
+        self, hass, store: str, raise_errors: bool = False
+    ):
+        return (
+            await self.pbs_get(
+                hass, f"admin/datastore/{store}/status", raise_errors=raise_errors
+            )
+            or {}
+        )
 
-    async def get_pbs_backup_list(self, hass, store: str):
-        return await self.pbs_get(hass, f"admin/datastore/{store}/snapshots") or []
+    async def get_pbs_datastore_usage(
+        self, hass, store: str, raise_errors: bool = False
+    ):
+        return (
+            await self.pbs_get(
+                hass, f"admin/datastore/{store}/gc", raise_errors=raise_errors
+            )
+            or {}
+        )
 
-    async def get_pbs_node_status(self, hass):
-        return await self.pbs_get(hass, "nodes/localhost/status") or {}
+    async def get_pbs_tasks(self, hass, raise_errors: bool = False):
+        return (
+            await self.pbs_get(
+                hass, "nodes/localhost/tasks", raise_errors=raise_errors
+            )
+            or []
+        )
 
-    async def get_pbs_gc(self, hass, store: str):
-        return await self.pbs_get(hass, f"admin/datastore/{store}/gc") or {}
+    async def get_pbs_prune_jobs(self, hass, raise_errors: bool = False):
+        """Get configured PBS prune jobs."""
+        return await self.pbs_get(hass, "admin/prune", raise_errors=raise_errors) or []
 
-    async def get_pbs_snapshots(self, hass, store: str):
-        return await self.pbs_get(hass, f"admin/datastore/{store}/snapshots") or []
+    async def get_pbs_verify_jobs(self, hass, raise_errors: bool = False):
+        """Get configured PBS verify jobs."""
+        return await self.pbs_get(hass, "admin/verify", raise_errors=raise_errors) or []
+
+    async def get_pbs_sync_jobs(self, hass, raise_errors: bool = False):
+        """Get configured PBS sync jobs."""
+        return await self.pbs_get(hass, "admin/sync", raise_errors=raise_errors) or []
+
+    async def get_pbs_version(self, hass, raise_errors: bool = False):
+        return await self.pbs_get(hass, "version", raise_errors=raise_errors) or {}
+
+    async def get_pbs_backup_list(
+        self, hass, store: str, raise_errors: bool = False
+    ):
+        return (
+            await self.pbs_get(
+                hass, f"admin/datastore/{store}/snapshots", raise_errors=raise_errors
+            )
+            or []
+        )
+
+    async def get_pbs_node_status(self, hass, raise_errors: bool = False):
+        return (
+            await self.pbs_get(
+                hass, "nodes/localhost/status", raise_errors=raise_errors
+            )
+            or {}
+        )
+
+    async def get_pbs_gc(self, hass, store: str, raise_errors: bool = False):
+        return (
+            await self.pbs_get(
+                hass, f"admin/datastore/{store}/gc", raise_errors=raise_errors
+            )
+            or {}
+        )
+
+    async def get_pbs_snapshots(self, hass, store: str, raise_errors: bool = False):
+        return (
+            await self.pbs_get(
+                hass, f"admin/datastore/{store}/snapshots", raise_errors=raise_errors
+            )
+            or []
+        )
 
     async def execute_pbs_node_command(self, hass, node, command):
         """Execute a command on PBS node (shutdown/reboot)."""
