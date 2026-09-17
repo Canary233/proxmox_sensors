@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import json
+import os
 import subprocess
 import re
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
@@ -19,6 +21,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_health()
         elif self.path == "/mounts":
             self._handle_mounts()
+        elif self.path == "/ksm":
+            self._handle_ksm()
         else:
             self.send_response(404)
             self.end_headers()
@@ -231,6 +235,38 @@ class Handler(BaseHTTPRequestHandler):
 
         except Exception as e:
             self._send_error_response(f"Error getting mount info: {e}")
+
+    def _handle_ksm(self):
+        """Expose a fixed, read-only KSM snapshot without client-controlled commands."""
+        base = Path("/sys/kernel/mm/ksm")
+        fields = ("run", "pages_shared", "pages_sharing", "pages_unshared",
+                  "pages_volatile", "full_scans", "pages_to_scan", "sleep_millisecs")
+        payload = {"available": False, "error": None, "ksmtuned": {}}
+        values = {}
+        if base.is_dir():
+            try:
+                for field in fields:
+                    values[field] = int((base / field).read_text(encoding="ascii").strip())
+                payload.update(values)
+                payload["available"] = True
+                payload["page_size"] = os.sysconf("SC_PAGE_SIZE")
+                # pages_sharing counts mappings beyond the first mapping per page.
+                payload["memory_saved_bytes"] = values["pages_sharing"] * payload["page_size"]
+            except (OSError, ValueError):
+                payload["error"] = "KSM counters are unavailable"
+        else:
+            payload["error"] = "KSM subsystem is unavailable"
+        try:
+            result = subprocess.run(
+                ["systemctl", "show", "ksmtuned", "--property=LoadState,ActiveState,SubState,UnitFileState"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+            payload["ksmtuned"] = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+            if result.returncode and not payload["ksmtuned"]:
+                payload["ksmtuned_error"] = "ksmtuned status is unavailable"
+        except (OSError, subprocess.TimeoutExpired):
+            payload["ksmtuned_error"] = "ksmtuned status is unavailable"
+        self._send_json_response(json.dumps(payload))
 
     def _get_smart_data_fast(self):
         """Universal SMART data collection for all disks."""
@@ -726,6 +762,7 @@ def main():
     print(f"  GET /memory          - Memory module information")
     print(f"  GET /health          - System health status")
     print(f"  GET /mounts          - Disk mount status")
+    print(f"  GET /ksm             - KSM status and counters")
     server.serve_forever()
 
 
