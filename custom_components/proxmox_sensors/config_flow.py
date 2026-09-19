@@ -45,7 +45,7 @@ SERVER_TYPES = {
 PVE_MIN_ENDPOINTS = ["nodes"]
 PVE_EXTRA_ENDPOINTS = ["cluster/resources"]
 PBS_MIN_ENDPOINTS = ["admin/datastore"]
-PBS_EXTRA_ENDPOINTS = ["version", "nodes/localhost/status", "nodes/localhost/tasks"]
+PBS_EXTRA_ENDPOINTS = ["version", "nodes/localhost/tasks"]
 
 
 def _pbs_server_id_index(server_id: str | None) -> int | None:

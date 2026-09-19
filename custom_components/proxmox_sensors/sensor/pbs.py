@@ -27,6 +27,12 @@ def _format_utc_timestamp(ts):
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%d/%m/%Y %H:%M:%S")
 
 
+def _pbs_node_status(coordinator):
+    """Return node status, or None when the optional capability is unavailable."""
+    status = coordinator.data.get("pbs_node_status")
+    return status if isinstance(status, dict) else None
+
+
 class ProxmoxPBSVersionSensor(ProxmoxPbsBaseSensor):
     """Sensor for PBS version."""
 
@@ -88,13 +94,23 @@ class ProxmoxPBSCpuSensor(ProxmoxPbsBaseSensor):
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
-        status = self.coordinator.data.get("pbs_node_status", {})
+        status = _pbs_node_status(self.coordinator)
+        if status is None:
+            return None
         cpu = status.get("cpu")
         return round(cpu * 100, 2) if cpu is not None else 0
 
     @property
     def extra_state_attributes(self):
-        status = self.coordinator.data.get("pbs_node_status", {})
+        status = _pbs_node_status(self.coordinator)
+        if status is None:
+            return {
+                "cores": None,
+                "model": None,
+                "load_1m": None,
+                "load_5m": None,
+                "load_15m": None,
+            }
         cpuinfo = status.get("cpuinfo") or {}
 
         # Fallback for containers
@@ -121,7 +137,9 @@ class ProxmoxPBSRamSensor(ProxmoxPbsBaseSensor):
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
-        status = self.coordinator.data.get("pbs_node_status", {})
+        status = _pbs_node_status(self.coordinator)
+        if status is None:
+            return None
         memory = status.get("memory", {})
         total = memory.get("total")
         used = memory.get("used")
@@ -131,7 +149,9 @@ class ProxmoxPBSRamSensor(ProxmoxPbsBaseSensor):
 
     @property
     def extra_state_attributes(self):
-        status = self.coordinator.data.get("pbs_node_status", {})
+        status = _pbs_node_status(self.coordinator)
+        if status is None:
+            return {"total_gb": None, "used_gb": None, "free_gb": None}
         memory = status.get("memory", {})
         return {
             "total_gb": round(memory.get("total", 0) / (1024**3), 2),
@@ -157,7 +177,10 @@ class ProxmoxPBSRamTotalSensor(ProxmoxPbsBaseSensor):
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
-        ram = self.coordinator.data.get("pbs_node_status", {}).get("memory", {})
+        status = _pbs_node_status(self.coordinator)
+        if status is None:
+            return None
+        ram = status.get("memory", {})
         return round(ram.get("total", 0) / (1024**3), 2)
 
 
@@ -178,7 +201,10 @@ class ProxmoxPBSRamUsedSensor(ProxmoxPbsBaseSensor):
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
-        ram = self.coordinator.data.get("pbs_node_status", {}).get("memory", {})
+        status = _pbs_node_status(self.coordinator)
+        if status is None:
+            return None
+        ram = status.get("memory", {})
         return round(ram.get("used", 0) / (1024**3), 2)
 
 
@@ -199,7 +225,10 @@ class ProxmoxPBSRamFreeSensor(ProxmoxPbsBaseSensor):
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _get_value(self):
-        ram = self.coordinator.data.get("pbs_node_status", {}).get("memory", {})
+        status = _pbs_node_status(self.coordinator)
+        if status is None:
+            return None
+        ram = status.get("memory", {})
         return round(ram.get("free", 0) / (1024**3), 2)
 
 
@@ -707,6 +736,9 @@ class ProxmoxPBSBackupsListSensor(ProxmoxPbsBaseSensor):
             b_time = b.get("backup-time")
             if b_type and b_id and b_time:
                 key = f"{b_type}/{b_id}"
+                namespace = b.get("namespace")
+                if namespace:
+                    key = f"{namespace}/{key}"
                 if key not in summary or b_time > summary[key]["raw_time"]:
                     summary[key] = {
                         "raw_time": b_time,

@@ -6,6 +6,7 @@ import logging
 import requests
 import time
 import urllib3
+from urllib.parse import urlencode
 from proxmoxer import ProxmoxAPI
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -716,14 +717,75 @@ class ProxmoxClient:
     async def get_pbs_version(self, hass, raise_errors: bool = False):
         return await self.pbs_get(hass, "version", raise_errors=raise_errors) or {}
 
+    async def _get_pbs_snapshots_with_namespaces(
+        self, hass, store: str, raise_errors: bool = False
+    ):
+        """Return root and visible namespace snapshots for one datastore."""
+        snapshots = await self.pbs_get(
+            hass, f"admin/datastore/{store}/snapshots", raise_errors=raise_errors
+        ) or []
+
+        if not isinstance(snapshots, list):
+            return snapshots
+
+        namespace_path = (
+            f"admin/datastore/{store}/namespace?"
+            f"{urlencode({'max-depth': 7})}"
+        )
+        try:
+            namespaces = await self.pbs_get(hass, namespace_path, raise_errors=True)
+        except AuthenticationError:
+            raise
+        except Exception as err:
+            LOGGER.warning("PBS namespaces unavailable for datastore %s: %s", store, err)
+            return snapshots
+
+        if not isinstance(namespaces, list):
+            return snapshots
+
+        merged = list(snapshots)
+        for namespace_item in namespaces:
+            namespace = (
+                namespace_item.get("ns")
+                if isinstance(namespace_item, dict)
+                else namespace_item
+            )
+            if not isinstance(namespace, str) or not namespace:
+                continue
+
+            snapshot_path = (
+                f"admin/datastore/{store}/snapshots?{urlencode({'ns': namespace})}"
+            )
+            try:
+                namespace_snapshots = await self.pbs_get(
+                    hass, snapshot_path, raise_errors=True
+                ) or []
+            except AuthenticationError:
+                raise
+            except Exception as err:
+                LOGGER.warning(
+                    "PBS namespace snapshots unavailable for datastore %s namespace %s: %s",
+                    store,
+                    namespace,
+                    err,
+                )
+                continue
+
+            if not isinstance(namespace_snapshots, list):
+                continue
+            for snapshot in namespace_snapshots:
+                if isinstance(snapshot, dict):
+                    snapshot = dict(snapshot)
+                    snapshot.setdefault("namespace", namespace)
+                merged.append(snapshot)
+
+        return merged
+
     async def get_pbs_backup_list(
         self, hass, store: str, raise_errors: bool = False
     ):
-        return (
-            await self.pbs_get(
-                hass, f"admin/datastore/{store}/snapshots", raise_errors=raise_errors
-            )
-            or []
+        return await self._get_pbs_snapshots_with_namespaces(
+            hass, store, raise_errors=raise_errors
         )
 
     async def get_pbs_node_status(self, hass, raise_errors: bool = False):
@@ -743,11 +805,8 @@ class ProxmoxClient:
         )
 
     async def get_pbs_snapshots(self, hass, store: str, raise_errors: bool = False):
-        return (
-            await self.pbs_get(
-                hass, f"admin/datastore/{store}/snapshots", raise_errors=raise_errors
-            )
-            or []
+        return await self._get_pbs_snapshots_with_namespaces(
+            hass, store, raise_errors=raise_errors
         )
 
     async def execute_pbs_node_command(self, hass, node, command):

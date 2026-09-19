@@ -6,6 +6,7 @@ from datetime import timedelta, datetime, timezone
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN, CONF_NODE, CONF_PLATFORM_TYPE
+from .api import PermissionError as ProxmoxPermissionError
 from .logic.guest_keys import (
     find_guest_node_in_resources,
     make_guest_key,
@@ -263,6 +264,9 @@ async def create_proxmox_coordinator(hass, entry, client):
     _last_good_guests: dict = {"vms": {}, "cts": {}}
     _last_good_cluster: dict = {}
     _last_good_pbs: dict = {}
+    # This capability belongs to this coordinator instance only. Reloading an
+    # entry creates a new coordinator and deliberately permits a new probe.
+    _pbs_node_status_capability = "unknown"
 
     def _remember_non_guest_section(section: str, value):
         _last_good_non_guest[section] = value
@@ -417,6 +421,7 @@ async def create_proxmox_coordinator(hass, entry, client):
             await asyncio.gather(*(_fetch_one(*spec) for spec in guest_specs))
 
     async def async_update_data():
+        nonlocal _pbs_node_status_capability
 
         result = {"server_type": server_type, "_cleanup_confirmed": _cleanup_defaults()}
 
@@ -504,14 +509,7 @@ async def create_proxmox_coordinator(hass, entry, client):
                             store=store,
                         )
 
-                        result["pbs_snapshots"][store] = await _pbs_preserved_call(
-                            "pbs_snapshots",
-                            [],
-                            client.get_pbs_snapshots,
-                            hass,
-                            store,
-                            store=store,
-                        )
+                        result["pbs_snapshots"][store] = backups
 
                         result["pbs_datastores"][store] = {
                             **status,
@@ -522,10 +520,25 @@ async def create_proxmox_coordinator(hass, entry, client):
                             "backup_errors": backup_errors,
                         }
 
-                    node_status = await _pbs_preserved_call(
-                        "pbs_node_status", {}, client.get_pbs_node_status, hass
-                    )
-                    result["pbs_node_status"] = node_status if isinstance(node_status, dict) else {}
+                    if _pbs_node_status_capability == "denied":
+                        result["pbs_node_status"] = None
+                    else:
+                        try:
+                            node_status = await limited_task(
+                                client.get_pbs_node_status, hass, True
+                            )
+                        except ProxmoxPermissionError:
+                            _pbs_node_status_capability = "denied"
+                            _LOGGER.info(
+                                "PBS node status is unavailable due to missing permission; "
+                                "it will not be retried until this entry is reloaded"
+                            )
+                            result["pbs_node_status"] = None
+                        else:
+                            _pbs_node_status_capability = "available"
+                            result["pbs_node_status"] = (
+                                node_status if isinstance(node_status, dict) else {}
+                            )
 
                     version_info = await _pbs_preserved_call(
                         "pbs_version_info", {}, client.get_pbs_version, hass
