@@ -14,7 +14,6 @@ from .zfs import ProxmoxZFSPoolSensor
 from .memory import ProxmoxDimmSensor
 from .sensor_last_action import PBSLastActionSensor
 from ..const import DOMAIN, CONF_NODE, CONF_PLATFORM_TYPE
-from ..logic.guest_cleanup import cleanup_excluded_guest_devices
 from ..logic.guest_migration_cleanup import setup_guest_migration_cleanup
 from ..logic.guest_keys import (
     matches_selected_guest,
@@ -1174,15 +1173,23 @@ async def async_setup_entry(
         if entity_entry.unique_id in legacy_pbs_last_action_ids:
             continue
 
+        # A PVE reload is not evidence that a VM/CT was intentionally removed.
+        # In particular, a temporarily empty local/cluster inventory, a failed
+        # API call, or an empty selection builds no guest entities for this
+        # cycle.  Retain registry rows until an explicit guest-identity
+        # migration can make a safe, deliberate change.
+        cleanup_section = _cleanup_section_for_unique_id(
+            entity_entry.unique_id, entry, server_type
+        )
+        if server_type == "PVE" and cleanup_section in {"vms", "cts"}:
+            continue
+
         if (entity_entry.unique_id or "").startswith("pve_cluster_"):
             if not allow_excluded_cluster_guest_cleanup(
                 hass, entry, c_data, entity_entry.unique_id
             ):
                 continue
 
-        cleanup_section = _cleanup_section_for_unique_id(
-            entity_entry.unique_id, entry, server_type
-        )
         if cleanup_section and not cleanup_confirmed.get(cleanup_section, False):
             _LOGGER.info(
                 "Skipping cleanup for %s because %s data is not confirmed fresh",
@@ -1203,9 +1210,6 @@ async def async_setup_entry(
         if not er.async_entries_for_device(ent_reg, device.id):
             _LOGGER.info("Removing orphan device: %s", device.name)
             dev_reg.async_remove_device(device.id)
-
-    if server_type == "PVE":
-        cleanup_excluded_guest_devices(hass)
 
     if entities:
         async_add_entities(entities)

@@ -574,9 +574,18 @@ class ProxmoxPBSLastBackupTimeSensor(ProxmoxPbsBaseSensor):
         if not last:
             return None
         ts = last.get("backup-time")
-        if not ts:
+        if (
+            isinstance(ts, bool)
+            or not isinstance(ts, (int, float))
+            or not math.isfinite(ts)
+        ):
             return None
-        return _format_utc_timestamp(ts)
+        try:
+            return dt_util.as_local(dt_util.utc_from_timestamp(ts)).strftime(
+                "%d/%m/%Y %H:%M:%S"
+            )
+        except (OSError, OverflowError, ValueError):
+            return None
 
     @property
     def device_info(self):
