@@ -25,7 +25,6 @@
           "token_id": "Token ID (without user@pve!)",
           "token_secret": "Token Secret",
           "auto_detect_node": "Auto-detect node from host IP",
-          "enable_lm_sensors": "Enable hardware sensors & temperatures",
           "enable_cluster": "Enable cluster-wide monitoring",
           "verify_ssl": "Verify SSL Certificate"
         }
@@ -43,7 +42,7 @@
       },
       "credentials_cluster": {
         "title": "3. Access Credentials — Proxmox Cluster",
-        "description": "Enter credentials to connect to the cluster. Uses the same API as PVE (port 8006).",
+        "description": "Enter credentials to connect to the cluster. Uses the same API as PVE (port 8006). This configures a new independent cluster. When adding each PVE node, explicitly choose this cluster.",
         "data": {
           "user": "User (e.g., root@pam)",
           "password": "Password",
@@ -59,6 +58,21 @@
           "node": "Node"
         }
       },
+      "pve_membership": {
+        "title": "Server membership",
+        "description": "Choose whether this server joins a configured cluster or is independent. Only configured clusters available for joining are listed.",
+        "menu_options": {
+          "join_cluster": "Join a configured cluster",
+          "independent": "Configure an independent server or cluster"
+        }
+      },
+      "join_cluster": {
+        "title": "Choose a cluster",
+        "description": "Select the cluster this server belongs to. This choice determines which nodes can share guest entities.",
+        "data": {
+          "cluster": "Cluster"
+        }
+      },
       "select_resources": {
         "title": "5. Resource Selection",
         "description": "Select which resources should be monitored and exposed as entities in Home Assistant.",
@@ -67,13 +81,16 @@
           "cts": "Containers (LXC)",
           "storage": "Storage",
           "enable_physical_disks": "Enable physical disk monitoring",
+          "enable_lm_sensors": "Enable hardware sensors & temperatures",
           "enable_node_controls": "Enable node power controls"
         }
       }
     },
     "error": {
+      "cluster_unavailable": "The selected cluster is no longer available for joining. Go back or select another cluster.",
       "cannot_connect": "Connection error. Check the server address.",
       "invalid_auth": "Authentication failed. Check credentials or token permissions.",
+      "insufficient_permissions": "The account does not have sufficient permissions to access the required Proxmox resources.",
       "unknown": "Unexpected error. Check Home Assistant logs."
     },
     "abort": {
@@ -89,7 +106,14 @@
       "guest_selection_changed": "Guest selections changed in another Options flow. Reopen Options and try again.",
       "guest_inventory_changed": "The guest inventory changed. Reopen Options and try again.",
       "invalid_guest_selection": "Only guests shown for this node can be selected.",
-      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs."
+      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs.",
+      "source_not_pve": "Only a PVE entry can associate a cluster scope.",
+      "source_scope_not_active": "This PVE entry needs an active explicit cluster scope.",
+      "target_not_cluster": "The selected entry is not a CLUSTER entry.",
+      "target_scope_invalid": "The selected CLUSTER entry has an invalid cluster scope.",
+      "target_scope_conflict": "The selected CLUSTER entry belongs to a different explicit scope.",
+      "scope_already_associated": "Another CLUSTER entry is already associated with this scope.",
+      "association_target_not_available": "The selected CLUSTER entry is no longer available."
     },
     "abort": {
       "pbs_no_options": "This PBS server has no configurable options.",
@@ -114,8 +138,20 @@
           "enable_cluster": "Enable cluster-wide monitoring",
           "enable_pbs_node_controls": "Enable PBS node power controls",
           "wol_mac": "Wake-on-LAN MAC address",
-          "verify_ssl": "Verify SSL Certificate"
+          "verify_ssl": "Verify SSL Certificate",
+          "cluster_scope_action": "Cluster association",
+          "cluster_association_action": "Cluster association: select an explicitly eligible CLUSTER entry"
         }
+      },
+      "scope_confirm": {
+        "title": "Confirm cluster identity change",
+        "description": "This only saves the selected explicit cluster scope. It does not migrate entities or devices.",
+        "data": {"confirm": "Confirm cluster identity change"}
+      },
+      "cluster_association_confirm": {
+        "title": "Confirm CLUSTER association",
+        "description": "Associate PVE {source} with CLUSTER {target} using scope {scope}. This does not change entities, devices, or selections.",
+        "data": {"confirm": "Confirm CLUSTER association"}
       }
     }
   },
@@ -657,6 +693,22 @@
       },
       "node_stressed": {
         "name": "Stressed"
+      }
+    }
+  },
+  "selector": {
+    "platform_type": {
+      "options": {
+        "PVE": "Proxmox VE",
+        "PBS": "Proxmox Backup Server",
+        "CLUSTER": "Proxmox Cluster"
+      }
+    },
+    "cluster_scope_action": {
+      "options": {
+        "keep": "Keep",
+        "keep_associated": "Keep — Keep association with CLUSTER: {name}",
+        "independent": "Separate from CLUSTER: {name}"
       }
     }
   },

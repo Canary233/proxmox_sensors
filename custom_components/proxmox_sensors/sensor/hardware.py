@@ -79,6 +79,7 @@ class ProxmoxHardwareSensor(ProxmoxBaseSensor):
             package_temp = None
             cores = []
             cpu_critical = None
+            cpu_fallback = None
 
             for key, val in hw.items():
                 kl = key.lower()
@@ -123,6 +124,12 @@ class ProxmoxHardwareSensor(ProxmoxBaseSensor):
                         if v is not None:
                             cores.append(v)
 
+                # ARM/Raspberry Pi sensors expose CPU temperature through a
+                # cpu_thermal block rather than x86 Package/Core labels.
+                # Keep this as a final fallback and accept only temp*_input.
+                if cpu_fallback is None and "cpu" in kl:
+                    cpu_fallback = self._parse_cpu_temperature_fallback(val)
+
             # -------- priority --------
             if package_temp is not None:
                 return package_temp
@@ -130,7 +137,7 @@ class ProxmoxHardwareSensor(ProxmoxBaseSensor):
             if cores:
                 return round(sum(cores) / len(cores), 1)
 
-            return None
+            return cpu_fallback
 
         # -------- Non-CPU --------
         return self._parse(hw.get(self._key, hw.get(self._sensor_key)))
@@ -241,6 +248,23 @@ class ProxmoxHardwareSensor(ProxmoxBaseSensor):
                 return "temperature"
 
         return "temperature"
+
+    def _parse_cpu_temperature_fallback(self, val):
+        """Extract one valid temp*_input reading from an ARM CPU block."""
+        if not isinstance(val, dict):
+            return None
+
+        for key, value in val.items():
+            if re.match(r"^temp\d+_input$", str(key).lower()):
+                parsed = self._parse({key: value})
+                if parsed is not None:
+                    return parsed
+            elif isinstance(value, dict):
+                parsed = self._parse_cpu_temperature_fallback(value)
+                if parsed is not None:
+                    return parsed
+
+        return None
 
     def _parse(self, val):
         try:

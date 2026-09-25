@@ -25,7 +25,6 @@
           "token_id": "ID токена (без користувача@pve!)",
           "token_secret": "Секрет токена",
           "auto_detect_node": "Автоматично визначати вузол за IP хоста",
-          "enable_lm_sensors": "Увімкнути апаратні датчики та температури",
           "enable_cluster": "Увімкнути моніторинг всього кластера",
           "verify_ssl": "Перевіряти SSL-сертифікат"
         }
@@ -43,7 +42,7 @@
       },
       "credentials_cluster": {
         "title": "3. Облікові дані — Кластер Proxmox",
-        "description": "Введіть облікові дані для підключення до кластера. Використовує той самий API, що й PVE (порт 8006).",
+        "description": "Введіть облікові дані для підключення до кластера. Використовує той самий API, що й PVE (порт 8006). Ця дія налаштовує новий незалежний кластер. Під час додавання кожного вузла PVE явно вибирайте цей кластер.",
         "data": {
           "user": "Користувач (наприклад, root@pam)",
           "password": "Пароль",
@@ -59,6 +58,21 @@
           "node": "Вузол"
         }
       },
+      "pve_membership": {
+        "title": "Належність сервера",
+        "description": "Виберіть, чи приєднується сервер до налаштованого кластера, чи працює незалежно. Показано лише доступні для приєднання кластери.",
+        "menu_options": {
+          "join_cluster": "Приєднатися до налаштованого кластера",
+          "independent": "Налаштувати незалежний сервер або кластер"
+        }
+      },
+      "join_cluster": {
+        "title": "Вибрати кластер",
+        "description": "Виберіть кластер, до якого належить сервер. Це визначає, які вузли можуть спільно використовувати сутності гостьових систем.",
+        "data": {
+          "cluster": "Кластер"
+        }
+      },
       "select_resources": {
         "title": "5. Вибір ресурсів",
         "description": "Виберіть, які ресурси слід відстежувати та відображати як сутності в Home Assistant.",
@@ -67,13 +81,16 @@
           "cts": "Контейнери (LXC)",
           "storage": "Сховище",
           "enable_physical_disks": "Увімкнути моніторинг фізичних дисків",
+          "enable_lm_sensors": "Увімкнути апаратні датчики та температури",
           "enable_node_controls": "Увімкнути керування живленням вузла"
         }
       }
     },
     "error": {
+      "cluster_unavailable": "Вибраний кластер більше недоступний для приєднання. Поверніться назад або виберіть інший кластер.",
       "cannot_connect": "Помилка підключення. Перевірте адресу сервера.",
       "invalid_auth": "Помилка автентифікації. Перевірте облікові дані або права токена.",
+      "insufficient_permissions": "Обліковий запис не має достатніх дозволів для доступу до потрібних ресурсів Proxmox.",
       "unknown": "Неочікувана помилка. Перевірте логи Home Assistant."
     },
     "abort": {
@@ -89,7 +106,14 @@
       "guest_selection_changed": "Guest selections changed in another Options flow. Reopen Options and try again.",
       "guest_inventory_changed": "The guest inventory changed. Reopen Options and try again.",
       "invalid_guest_selection": "Only guests shown for this node can be selected.",
-      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs."
+      "guest_selection_failed": "Guest selections could not be saved. Check the Home Assistant logs.",
+      "source_not_pve": "Only a PVE entry can associate a cluster scope.",
+      "source_scope_not_active": "This PVE entry needs an active explicit cluster scope.",
+      "target_not_cluster": "The selected entry is not a CLUSTER entry.",
+      "target_scope_invalid": "The selected CLUSTER entry has an invalid cluster scope.",
+      "target_scope_conflict": "The selected CLUSTER entry belongs to a different explicit scope.",
+      "scope_already_associated": "Another CLUSTER entry is already associated with this scope.",
+      "association_target_not_available": "The selected CLUSTER entry is no longer available."
     },
     "abort": {
       "pbs_no_options": "Цей сервер PBS не має налаштовуваних опцій.",
@@ -115,7 +139,15 @@
           "enable_pbs_node_controls": "Увімкнути керування живленням вузла PBS",
           "wol_mac": "MAC-адреса Wake-on-LAN",
           "verify_ssl": "Перевіряти SSL-сертифікат"
+          ,"cluster_scope_action": "Керування ідентичністю кластера",
+          "cluster_association_action": "Cluster association: select an explicitly eligible CLUSTER entry"
         }
+      }, "scope_confirm": {"title": "Підтвердити ідентичність кластера", "description": "Зберігається лише явна область. Сутності й пристрої не переносяться.", "data": {"confirm": "Підтвердити зміну"}
+      },
+      "cluster_association_confirm": {
+        "title": "Confirm CLUSTER association",
+        "description": "Associate PVE {source} with CLUSTER {target} using scope {scope}. This does not change entities, devices, or selections.",
+        "data": {"confirm": "Confirm CLUSTER association"}
       }
     }
   },
@@ -646,6 +678,7 @@
       }
     }
   },
+  "selector": {"platform_type": {"options": {"PVE": "Proxmox VE", "PBS": "Proxmox Backup Server", "CLUSTER": "Кластер Proxmox"}}, "cluster_scope_action": {"options": {"keep": "Зберегти", "keep_associated": "Зберегти — Зберегти зв’язок із CLUSTER: {name}", "independent": "Відокремити від CLUSTER: {name}"}}},
   "services": {
     "create_vzdump_backup": {
       "name": "Proxmox: Запустити резервне копіювання",
