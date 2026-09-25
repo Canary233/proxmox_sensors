@@ -5,7 +5,8 @@ import logging
 import asyncio
 from .logic.cluster_scope import (
     ACTIVE_SCOPE, CLUSTER_SCOPE_ID, CLUSTER_SCOPE_STATE, new_cluster_scope_id,
-    cluster_entry_scope_status, entry_cluster_scope_id,
+    cluster_entry_scope_status, entry_cluster_scope_id, recoverable_pve_scopes,
+    recovery_registry_conflict,
 )
 import voluptuous as vol
 
@@ -14,6 +15,7 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.translation import async_get_translations
+from homeassistant.helpers import entity_registry as er, device_registry as dr
 
 from .api import (
     AuthenticationError,
@@ -189,7 +191,7 @@ class ProxmoxConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return {
             value: translations.get(key) or english.get(key) or value
             for value in SERVER_TYPES
-            for key in (f"component.{DOMAIN}.selector.platform_type.options.{value}",)
+            for key in (f"component.{DOMAIN}.selector.platform_type.options.{value.lower()}",)
         }
 
     # ===== STEP 2 — AUTH METHOD ==============================
@@ -645,6 +647,80 @@ class ProxmoxConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     # ===== FINAL STEP ==========
 
+    def _recovery_candidates(self):
+        entries = tuple(self.hass.config_entries.async_entries(DOMAIN))
+        groups = recoverable_pve_scopes(entries)
+        if not groups:
+            return {}
+        try:
+            rows = tuple(er.async_get(self.hass).entities.values())
+            devices = tuple(dr.async_get(self.hass).devices.values())
+        except Exception:
+            _LOGGER.exception("Unable to inspect registries for CLUSTER recovery")
+            return {}
+        return {
+            scope: members for scope, members in groups.items()
+            if not recovery_registry_conflict(scope, members, rows, devices)
+        }
+
+    async def async_step_cluster_association(self, user_input=None):
+        return self.async_show_menu(
+            step_id="cluster_association",
+            menu_options=["new_cluster_association", "recover_cluster_scope"],
+        )
+
+    async def async_step_new_cluster_association(self, user_input=None):
+        self._cluster_association_choice = "new"
+        return await self._finish()
+
+    async def async_step_recover_cluster_scope(self, user_input=None):
+        candidates = self._recovery_candidates()
+        errors = {}
+        if user_input is not None:
+            scope = user_input.get("scope")
+            offered = getattr(self, "_offered_recovery", {})
+            if scope in candidates and candidates[scope] == offered.get(scope):
+                self._selected_recovery = (scope, candidates[scope])
+                return await self.async_step_confirm_cluster_recovery()
+            errors["base"] = "recovery_unavailable"
+        self._offered_recovery = dict(candidates)
+        entries = {entry.entry_id: entry for entry in self.hass.config_entries.async_entries(DOMAIN)}
+        choices = {
+            scope: ", ".join(
+                f"{entries[entry_id].title} ({entries[entry_id].data.get(CONF_HOST, '?')}; {entry_id})"
+                for entry_id in members
+            )
+            for scope, members in candidates.items()
+        }
+        return self.async_show_form(
+            step_id="recover_cluster_scope",
+            data_schema=vol.Schema({vol.Required("scope"): vol.In(choices)}),
+            errors=errors,
+        )
+
+    async def async_step_confirm_cluster_recovery(self, user_input=None):
+        selection = getattr(self, "_selected_recovery", None)
+        if selection is None:
+            return await self.async_step_recover_cluster_scope()
+        scope, members = selection
+        if user_input is not None:
+            if not user_input.get("confirm", False):
+                self._selected_recovery = None
+                return await self.async_step_cluster_association()
+            if self._recovery_candidates().get(scope) != members:
+                self._selected_recovery = None
+                return await self.async_step_recover_cluster_scope({"scope": scope})
+            self._cluster_association_choice = "recover"
+            return await self._finish()
+        entries = {entry.entry_id: entry for entry in self.hass.config_entries.async_entries(DOMAIN)}
+        return self.async_show_form(
+            step_id="confirm_cluster_recovery",
+            data_schema=vol.Schema({vol.Required("confirm", default=False): bool}),
+            description_placeholders={
+                "pves": ", ".join(f"{entries[entry_id].title} ({entry_id})" for entry_id in members),
+            },
+        )
+
     def _eligible_clusters(self):
         clusters = [entry for entry in self.hass.config_entries.async_entries(DOMAIN)
                     if entry.data.get(CONF_PLATFORM_TYPE) == "CLUSTER"]
@@ -756,6 +832,16 @@ class ProxmoxConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # ============ CLUSTER =================
         elif server_type == "CLUSTER":
+            candidates = self._recovery_candidates()
+            choice = getattr(self, "_cluster_association_choice", None)
+            if candidates and choice is None:
+                return await self.async_step_cluster_association()
+            if choice == "recover":
+                selection = getattr(self, "_selected_recovery", None)
+                if selection is None or self._recovery_candidates().get(selection[0]) != selection[1]:
+                    self._cluster_association_choice = None
+                    self._selected_recovery = None
+                    return await self.async_step_recover_cluster_scope({"scope": None})
             self._config["server_id"] = f"cluster_{self._config[CONF_HOST]}"
 
             try:
@@ -782,9 +868,6 @@ class ProxmoxConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not title_name:
                 title_name = self._config.get(CONF_HOST)
 
-            if CLUSTER_SCOPE_ID not in self._config:
-                self._config[CLUSTER_SCOPE_ID] = new_cluster_scope_id()
-            self._config[CLUSTER_SCOPE_STATE] = ACTIVE_SCOPE
 
         # ========== PVE =================
         else:
@@ -812,6 +895,27 @@ class ProxmoxConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         duplicate = await self._check_config_entry_identity()
         if duplicate is not None:
             return duplicate
+        if server_type == "CLUSTER":
+            if choice == "recover":
+                selection = getattr(self, "_selected_recovery", None)
+                if selection is None or self._recovery_candidates().get(selection[0]) != selection[1]:
+                    self._cluster_association_choice = None
+                    self._selected_recovery = None
+                    return await self.async_step_recover_cluster_scope({"scope": None})
+                self._config[CLUSTER_SCOPE_ID] = selection[0]
+            elif CLUSTER_SCOPE_ID not in self._config:
+                reserved = {
+                    entry_cluster_scope_id(entry)
+                    for entry in self.hass.config_entries.async_entries(DOMAIN)
+                }
+                for _ in range(16):
+                    scope = new_cluster_scope_id()
+                    if scope not in reserved:
+                        self._config[CLUSTER_SCOPE_ID] = scope
+                        break
+                else:
+                    return self.async_abort(reason="scope_unavailable")
+            self._config[CLUSTER_SCOPE_STATE] = ACTIVE_SCOPE
         title = f"{server_type}: {title_name}"
         return self.async_create_entry(title=title, data=self._config)
 

@@ -1,10 +1,12 @@
-"""Helpers for explicit, locally persisted PVE cluster scopes."""
+"""Pure helpers for explicit, locally-persisted PVE cluster scopes.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
 import logging
+import re
 from uuid import UUID, uuid4
 
 
@@ -56,6 +58,7 @@ def normalize_cluster_scope_id(value) -> str | None:
 
 
 def _entry_data(entry) -> dict:
+    """Read mapping-like entry data without mutating the supplied object."""
     if isinstance(entry, dict):
         return entry.get("data", entry)
     return getattr(entry, "data", {}) or {}
@@ -274,6 +277,57 @@ def cluster_guest_identity_context(cluster_entry, entries: Iterable, legacy_scop
 def entry_cluster_scope_id(entry) -> str | None:
     """Return an entry's valid explicit scope; legacy and invalid values do not group."""
     return normalize_cluster_scope_id(_entry_data(entry).get(CLUSTER_SCOPE_ID))
+
+
+def recoverable_pve_scopes(entries: Iterable) -> dict[str, tuple[str, ...]]:
+    entries = tuple(entries)
+    groups: dict[str, list] = {}
+    for entry in entries:
+        if _entry_platform(entry) == "PVE":
+            scope = entry_cluster_scope_id(entry)
+            if scope is not None:
+                groups.setdefault(scope, []).append(entry)
+    result = {}
+    for scope, members in groups.items():
+        ids = [getattr(entry, "entry_id", None) for entry in members]
+        if (not all(ids) or len(ids) != len(set(ids))
+                or any(_entry_data(entry).get(CLUSTER_SCOPE_ID) != scope
+                       or cluster_scope_status(entry) != ACTIVE_SCOPE for entry in members)
+                or any(_entry_platform(entry) == "CLUSTER"
+                       and entry_cluster_scope_id(entry) == scope for entry in entries)):
+            continue
+        result[scope] = tuple(sorted(ids))
+    return result
+
+
+def recovery_registry_conflict(scope, pve_entry_ids, entity_rows, devices) -> bool:
+    escaped = re.escape(scope)
+    guest_sensor = re.compile(rf"pve_cluster_{escaped}_proxmox_(?:vm|ct)_{escaped}_")
+    guest_button = re.compile(rf"proxmox_(?:vm|ct)_cluster_{escaped}_")
+    guest_device = re.compile(rf"proxmox_(?:vm|ct)_cluster_{escaped}_[0-9]+_v1$")
+    replication = re.compile(rf"pve_cluster_{escaped}_replication_")
+    members = set(pve_entry_ids)
+    for row in entity_rows:
+        if getattr(row, "platform", None) != "proxmox_sensors":
+            continue
+        uid = getattr(row, "unique_id", None) or ""
+        if guest_sensor.match(uid) or guest_button.match(uid):
+            if getattr(row, "config_entry_id", None) not in members:
+                return True
+        elif replication.match(uid) or uid == f"proxmox_cluster_firewall_{scope}":
+            return True
+    for device in devices:
+        identifiers = getattr(device, "identifiers", ()) or ()
+        if not any(domain == "proxmox_sensors" and isinstance(identifier, str)
+                   and guest_device.fullmatch(identifier)
+                   for domain, identifier in identifiers):
+            continue
+        owners = getattr(device, "config_entries", None)
+        if owners is None:
+            owners = {getattr(device, "config_entry_id", None)}
+        if not owners or not set(owners) <= members:
+            return True
+    return False
 
 
 def cluster_scope_members(entries: Iterable, scope_id) -> list:

@@ -42,7 +42,7 @@
       },
       "credentials_cluster": {
         "title": "3. Credenziali di Accesso — Cluster Proxmox",
-        "description": "Inserisci le credenziali per connetterti al cluster. Utilizza la stessa API di PVE (porta 8006). Questa operazione configura un nuovo cluster indipendente. Quando aggiungi ciascun nodo PVE, scegli esplicitamente questo cluster.",
+        "description": "Inserisci le credenziali del CLUSTER (API PVE, porta 8006). Se esistono PVE senza CLUSTER associato, puoi creare una nuova associazione o recuperarne una esplicitamente.",
         "data": {
           "user": "Utente (es. root@pam)",
           "password": "Password",
@@ -50,6 +50,24 @@
           "token_secret": "Segreto Token",
           "verify_ssl": "Verifica Certificato SSL"
         }
+      },
+      "cluster_association": {
+        "title": "Associazione CLUSTER",
+        "description": "Crea una nuova associazione o recuperane una usata da PVE senza CLUSTER associato. Nome e host non determinano l'appartenenza.",
+        "menu_options": {
+          "new_cluster_association": "Crea nuova associazione",
+          "recover_cluster_scope": "Recupera associazione di PVE esistenti"
+        }
+      },
+      "recover_cluster_scope": {
+        "title": "PVE senza CLUSTER associato",
+        "description": "Scegli il gruppo di PVE che appartiene a questo CLUSTER fisico. Può apparire un PVE Independent; verifica tutti i membri.",
+        "data": {"scope": "Gruppo PVE"}
+      },
+      "confirm_cluster_recovery": {
+        "title": "Conferma recupero associazione CLUSTER",
+        "description": "Conferma che questo CLUSTER fisico include tutti questi PVE: {pves}. Verrà riutilizzata la loro identità esistente.",
+        "data": {"confirm": "Recupera questa associazione"}
       },
       "select_node": {
         "title": "4. Seleziona Nodo",
@@ -87,6 +105,7 @@
       }
     },
     "error": {
+      "recovery_unavailable": "Il gruppo PVE è cambiato o la sua identità è in conflitto con il Registry. Scegli di nuovo; nessun CLUSTER è stato creato.",
       "cluster_unavailable": "Il cluster selezionato non è più disponibile. Torna indietro o seleziona un altro cluster.",
       "cannot_connect": "Errore di connessione. Verifica l'indirizzo del server.",
       "invalid_auth": "Autenticazione fallita. Verifica le credenziali o i permessi del token.",
@@ -94,6 +113,7 @@
       "unknown": "Errore inaspettato. Controlla i log di Home Assistant."
     },
     "abort": {
+      "scope_unavailable": "Impossibile generare un'associazione CLUSTER libera. Riprova.",
       "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "Questo nodo è già configurato.",
       "no_data": "Nessun dato del cluster ricevuto. Verifica la tua configurazione.",
@@ -678,7 +698,7 @@
       }
     }
   },
-  "selector": {"platform_type": {"options": {"PVE": "Proxmox VE", "PBS": "Proxmox Backup Server", "CLUSTER": "Cluster Proxmox"}}, "cluster_scope_action": {"options": {"keep": "Mantieni", "keep_associated": "Mantieni — Mantieni l'associazione con CLUSTER: {name}", "independent": "Separa da CLUSTER: {name}"}}},
+  "selector": {"platform_type": {"options": {"pve": "Proxmox VE", "pbs": "Proxmox Backup Server", "cluster": "Cluster Proxmox"}}, "cluster_scope_action": {"options": {"keep": "Mantieni l'associazione al cluster", "independent": "Indipendente — nessuna migrazione delle entità VM/LXC tra nodi"}}},
   "services": {
     "create_vzdump_backup": {
       "name": "Proxmox: Avvia backup",

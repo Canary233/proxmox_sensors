@@ -6,6 +6,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers import selector
 from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
@@ -48,33 +49,35 @@ class ProxmoxOptionsFlow(config_entries.OptionsFlow):
             getattr(self.hass, "config", None), "language", "en"
         )
         translations = await async_get_translations(
-            self.hass, language, "component", {DOMAIN}
+            self.hass, language, "selector", {DOMAIN}
         )
         english = translations if language == "en" else await async_get_translations(
-            self.hass, "en", "component", {DOMAIN}
+            self.hass, "en", "selector", {DOMAIN}
         )
         prefix = f"component.{DOMAIN}.selector.cluster_scope_action.options."
         return {
             key: translations.get(prefix + key) or english.get(prefix + key) or key
-            for key in ("keep", "keep_associated", "independent")
+            for key in ("keep", "independent")
         }
 
 
     def _scope_validator(self):
-        """Use ``vol.In`` in HA while retaining the lightweight test shim."""
-        return getattr(vol, "In", lambda choices: str)(self._scope_choices())
+        return selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=list(self._scope_choices()),
+                translation_key="cluster_scope_action",
+            )
+        )
 
     def _scope_choices(self):
+        """Return the normal PVE Options Flow cluster actions."""
         entries = list(self.hass.config_entries.async_entries(DOMAIN))
         cluster = associated_cluster_for_pve(self.config_entry, entries)
         if cluster is None:
             return {"keep": self._localized_scope_labels["keep"]}
-        name = cluster.data.get("cluster_name") or getattr(
-            cluster, "title", cluster.entry_id
-        )
         return {
-            "keep": self._localized_scope_labels["keep_associated"].format(name=name),
-            "independent": self._localized_scope_labels["independent"].format(name=name),
+            "keep": self._localized_scope_labels["keep"],
+            "independent": self._localized_scope_labels["independent"],
         }
 
     def _cluster_association_choices(self):

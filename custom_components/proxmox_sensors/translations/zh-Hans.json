@@ -42,7 +42,7 @@
       },
       "credentials_cluster": {
         "title": "3. 访问凭据 — Proxmox 集群",
-        "description": "请输入用于连接集群的凭据。集群使用与 PVE 相同的 API（端口 8006）。 此操作将配置一个新的独立集群。添加每个 PVE 节点时，请明确选择此集群。",
+        "description": "输入 CLUSTER 凭据（PVE API，端口 8006）。如果存在无关联 CLUSTER 的 PVE 条目，可创建新关联或明确恢复现有关联。",
         "data": {
           "user": "用户（例如 root@pam）",
           "password": "密码",
@@ -50,6 +50,24 @@
           "token_secret": "Token Secret",
           "verify_ssl": "验证 SSL 证书"
         }
+      },
+      "cluster_association": {
+        "title": "CLUSTER 关联",
+        "description": "创建新关联，或恢复无关联 CLUSTER 的 PVE 条目所用关联。名称和主机地址不能用于推断成员关系。",
+        "menu_options": {
+          "new_cluster_association": "创建新关联",
+          "recover_cluster_scope": "恢复现有 PVE 条目的关联"
+        }
+      },
+      "recover_cluster_scope": {
+        "title": "无关联 CLUSTER 的 PVE 条目",
+        "description": "选择属于此物理 CLUSTER 的 PVE 组。Independent PVE 也可能出现在此处；继续前请核对所有成员。",
+        "data": {"scope": "PVE 组"}
+      },
+      "confirm_cluster_recovery": {
+        "title": "确认恢复 CLUSTER 关联",
+        "description": "请确认此物理 CLUSTER 包含以下所有 PVE：{pves}。将沿用它们现有的身份。",
+        "data": {"confirm": "恢复此关联"}
       },
       "select_node": {
         "title": "4. 选择节点",
@@ -87,6 +105,7 @@
       }
     },
     "error": {
+      "recovery_unavailable": "PVE 组已变化，或其身份与 Registry 冲突。请重新选择；未创建 CLUSTER。",
       "cluster_unavailable": "所选集群已无法加入。请返回或选择其他集群。",
       "cannot_connect": "连接错误。请检查服务器地址。",
       "invalid_auth": "认证失败。请检查凭据或 Token 权限。",
@@ -94,6 +113,7 @@
       "unknown": "未知错误。请查看 Home Assistant 日志。"
     },
     "abort": {
+      "scope_unavailable": "无法生成未使用的 CLUSTER 关联。请重试。",
       "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "该节点已经配置过。",
       "no_data": "未收到集群数据。请检查配置。",
@@ -678,7 +698,7 @@
       }
     }
   },
-  "selector": {"platform_type": {"options": {"PVE": "Proxmox VE", "PBS": "Proxmox Backup Server", "CLUSTER": "Proxmox 集群"}}, "cluster_scope_action": {"options": {"keep": "保留", "keep_associated": "保留 — 保留与 CLUSTER 的关联：{name}", "independent": "从 CLUSTER 分离：{name}"}}},
+  "selector": {"platform_type": {"options": {"pve": "Proxmox VE", "pbs": "Proxmox Backup Server", "cluster": "Proxmox 集群"}}, "cluster_scope_action": {"options": {"keep": "保持与集群关联", "independent": "独立运行 — 不在节点间迁移 VM/LXC 实体"}}},
   "services": {
     "create_vzdump_backup": {
       "name": "Proxmox：启动备份",

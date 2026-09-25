@@ -42,7 +42,7 @@
       },
       "credentials_cluster": {
         "title": "3. Облікові дані — Кластер Proxmox",
-        "description": "Введіть облікові дані для підключення до кластера. Використовує той самий API, що й PVE (порт 8006). Ця дія налаштовує новий незалежний кластер. Під час додавання кожного вузла PVE явно вибирайте цей кластер.",
+        "description": "Введіть облікові дані CLUSTER (API PVE, порт 8006). Якщо є PVE без пов’язаного CLUSTER, можна створити нову прив’язку або явно відновити наявну.",
         "data": {
           "user": "Користувач (наприклад, root@pam)",
           "password": "Пароль",
@@ -50,6 +50,24 @@
           "token_secret": "Секрет токена",
           "verify_ssl": "Перевіряти SSL-сертифікат"
         }
+      },
+      "cluster_association": {
+        "title": "Прив’язка CLUSTER",
+        "description": "Створіть нову прив’язку або відновіть прив’язку PVE без пов’язаного CLUSTER. Назва й адреса не визначають членство.",
+        "menu_options": {
+          "new_cluster_association": "Створити нову прив’язку",
+          "recover_cluster_scope": "Відновити прив’язку наявних PVE"
+        }
+      },
+      "recover_cluster_scope": {
+        "title": "PVE без пов’язаного CLUSTER",
+        "description": "Виберіть групу PVE цього фізичного CLUSTER. Тут може бути незалежний PVE; перевірте всіх учасників.",
+        "data": {"scope": "Група PVE"}
+      },
+      "confirm_cluster_recovery": {
+        "title": "Підтвердити відновлення прив’язки CLUSTER",
+        "description": "Підтвердьте, що цей фізичний CLUSTER охоплює всі ці PVE: {pves}. Їхня наявна ідентичність збережеться.",
+        "data": {"confirm": "Відновити цю прив’язку"}
       },
       "select_node": {
         "title": "4. Вибір вузла",
@@ -87,6 +105,7 @@
       }
     },
     "error": {
+      "recovery_unavailable": "Група PVE змінилася або її ідентичність конфліктує з Registry. Виберіть знову; CLUSTER не створено.",
       "cluster_unavailable": "Вибраний кластер більше недоступний для приєднання. Поверніться назад або виберіть інший кластер.",
       "cannot_connect": "Помилка підключення. Перевірте адресу сервера.",
       "invalid_auth": "Помилка автентифікації. Перевірте облікові дані або права токена.",
@@ -94,6 +113,7 @@
       "unknown": "Неочікувана помилка. Перевірте логи Home Assistant."
     },
     "abort": {
+      "scope_unavailable": "Не вдалося створити вільну прив’язку CLUSTER. Спробуйте ще раз.",
       "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "Цей вузол вже налаштовано.",
       "no_data": "Дані кластера не отримано. Перевірте вашу конфігурацію.",
@@ -678,7 +698,7 @@
       }
     }
   },
-  "selector": {"platform_type": {"options": {"PVE": "Proxmox VE", "PBS": "Proxmox Backup Server", "CLUSTER": "Кластер Proxmox"}}, "cluster_scope_action": {"options": {"keep": "Зберегти", "keep_associated": "Зберегти — Зберегти зв’язок із CLUSTER: {name}", "independent": "Відокремити від CLUSTER: {name}"}}},
+  "selector": {"platform_type": {"options": {"pve": "Proxmox VE", "pbs": "Proxmox Backup Server", "cluster": "Кластер Proxmox"}}, "cluster_scope_action": {"options": {"keep": "Зберегти зв’язок із кластером", "independent": "Незалежно — без міграції сутностей VM/LXC між вузлами"}}},
   "services": {
     "create_vzdump_backup": {
       "name": "Proxmox: Запустити резервне копіювання",

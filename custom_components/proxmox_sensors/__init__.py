@@ -10,6 +10,7 @@ from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.const import Platform
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import device_registry as dr
+import homeassistant.helpers.config_validation as cv
 
 from .services import register_services
 from .dashboard.preview import async_register_preview
@@ -41,6 +42,8 @@ from .logic.pve_local_identity import (
 from .logic.pve_devices import resolve_node_device_context, can_remove_pve_device
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 ENTRY_VERSION = 3
 

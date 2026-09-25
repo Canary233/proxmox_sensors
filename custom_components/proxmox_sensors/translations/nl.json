@@ -42,7 +42,7 @@
       },
       "credentials_cluster": {
         "title": "3. Toegangsgegevens — Proxmox Cluster",
-        "description": "Voer de gegevens in om verbinding te maken met het cluster. Gebruikt dezelfde API als PVE (poort 8006). Hiermee configureer je een nieuw onafhankelijk cluster. Kies dit cluster expliciet bij het toevoegen van elke PVE-node.",
+        "description": "Voer de aanmeldgegevens van de CLUSTER in (PVE-API, poort 8006). Voor PVE-vermeldingen zonder CLUSTER kunt u een nieuwe koppeling maken of er expliciet een herstellen.",
         "data": {
           "user": "Gebruiker (bijv. root@pam)",
           "password": "Wachtwoord",
@@ -50,6 +50,24 @@
           "token_secret": "Token Geheim",
           "verify_ssl": "SSL-certificaat verifiëren"
         }
+      },
+      "cluster_association": {
+        "title": "CLUSTER-koppeling",
+        "description": "Maak een nieuwe koppeling of herstel die van PVE-vermeldingen zonder gekoppelde CLUSTER. Namen en hosts bepalen nooit het lidmaatschap.",
+        "menu_options": {
+          "new_cluster_association": "Nieuwe koppeling maken",
+          "recover_cluster_scope": "Koppeling van bestaande PVE-vermeldingen herstellen"
+        }
+      },
+      "recover_cluster_scope": {
+        "title": "PVE-vermeldingen zonder gekoppelde CLUSTER",
+        "description": "Kies de PVE-groep die bij deze fysieke CLUSTER hoort. Een onafhankelijke PVE kan hier verschijnen; controleer alle leden.",
+        "data": {"scope": "PVE-groep"}
+      },
+      "confirm_cluster_recovery": {
+        "title": "Herstel van CLUSTER-koppeling bevestigen",
+        "description": "Bevestig dat deze fysieke CLUSTER alle volgende PVE-vermeldingen bevat: {pves}. Hun bestaande identiteit wordt hergebruikt.",
+        "data": {"confirm": "Deze koppeling herstellen"}
       },
       "select_node": {
         "title": "4. Selecteer Knooppunt",
@@ -87,6 +105,7 @@
       }
     },
     "error": {
+      "recovery_unavailable": "De PVE-groep is gewijzigd of de identiteit conflicteert met de Registry. Kies opnieuw; er is geen CLUSTER gemaakt.",
       "cluster_unavailable": "Het geselecteerde cluster is niet meer beschikbaar om aan te sluiten. Ga terug of selecteer een ander cluster.",
       "cannot_connect": "Verbindingsfout. Controleer het serveradres.",
       "invalid_auth": "Authenticatie mislukt. Controleer de gegevens of tokenrechten.",
@@ -94,6 +113,7 @@
       "unknown": "Onverwachte fout. Controleer de Home Assistant-logboeken."
     },
     "abort": {
+      "scope_unavailable": "Kan geen vrije CLUSTER-koppeling maken. Probeer opnieuw.",
       "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "Dit knooppunt is al geconfigureerd.",
       "no_data": "Geen clustergegevens ontvangen. Controleer uw configuratie.",
@@ -678,7 +698,7 @@
       }
     }
   },
-  "selector": {"platform_type": {"options": {"PVE": "Proxmox VE", "PBS": "Proxmox Backup Server", "CLUSTER": "Proxmox-cluster"}}, "cluster_scope_action": {"options": {"keep": "Behouden", "keep_associated": "Behouden — Koppeling met CLUSTER behouden: {name}", "independent": "Loskoppelen van CLUSTER: {name}"}}},
+  "selector": {"platform_type": {"options": {"pve": "Proxmox VE", "pbs": "Proxmox Backup Server", "cluster": "Proxmox-cluster"}}, "cluster_scope_action": {"options": {"keep": "Gekoppeld blijven aan het cluster", "independent": "Onafhankelijk — geen migratie van VM/LXC-entiteiten tussen knooppunten"}}},
   "services": {
     "create_vzdump_backup": {
       "name": "Proxmox: Backup starten",

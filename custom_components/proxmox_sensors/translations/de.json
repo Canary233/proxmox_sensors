@@ -42,7 +42,7 @@
       },
       "credentials_cluster": {
         "title": "3. Zugangsdaten — Proxmox Cluster",
-        "description": "Gib die Zugangsdaten für die Verbindung zum Cluster ein. Verwendet dieselbe API wie PVE (Port 8006). Damit wird ein neuer unabhängiger Cluster eingerichtet. Wähle beim Hinzufügen jedes PVE-Knotens ausdrücklich diesen Cluster.",
+        "description": "Geben Sie die CLUSTER-Zugangsdaten ein (PVE-API, Port 8006). Bei PVE-Einträgen ohne CLUSTER können Sie eine neue Zuordnung erstellen oder eine ausdrücklich wiederherstellen.",
         "data": {
           "user": "Benutzer (z.B. root@pam)",
           "password": "Passwort",
@@ -50,6 +50,24 @@
           "token_secret": "Token-Geheimnis",
           "verify_ssl": "SSL-Zertifikat überprüfen"
         }
+      },
+      "cluster_association": {
+        "title": "CLUSTER-Zuordnung",
+        "description": "Erstellen Sie eine neue Zuordnung oder stellen Sie eine Zuordnung von PVE-Einträgen ohne zugeordneten CLUSTER wieder her. Namen und Hosts begründen keine Mitgliedschaft.",
+        "menu_options": {
+          "new_cluster_association": "Neue Zuordnung erstellen",
+          "recover_cluster_scope": "Zuordnung vorhandener PVE-Einträge wiederherstellen"
+        }
+      },
+      "recover_cluster_scope": {
+        "title": "PVE-Einträge ohne zugeordneten CLUSTER",
+        "description": "Wählen Sie die PVE-Gruppe dieses physischen CLUSTER. Auch ein unabhängiger PVE kann hier erscheinen; prüfen Sie alle Mitglieder.",
+        "data": {"scope": "PVE-Gruppe"}
+      },
+      "confirm_cluster_recovery": {
+        "title": "Wiederherstellung der CLUSTER-Zuordnung bestätigen",
+        "description": "Bestätigen Sie, dass dieser physische CLUSTER alle folgenden PVE-Einträge umfasst: {pves}. Ihre bestehende Identität wird verwendet.",
+        "data": {"confirm": "Diese Zuordnung wiederherstellen"}
       },
       "select_node": {
         "title": "4. Knoten auswählen",
@@ -87,6 +105,7 @@
       }
     },
     "error": {
+      "recovery_unavailable": "Die PVE-Gruppe hat sich geändert oder ihre Identität steht im Konflikt mit der Registry. Bitte erneut wählen; kein CLUSTER wurde erstellt.",
       "cluster_unavailable": "Der ausgewählte Cluster ist nicht mehr für den Beitritt verfügbar. Gehe zurück oder wähle einen anderen Cluster.",
       "cannot_connect": "Verbindungsfehler. Überprüfe die Serveradresse.",
       "invalid_auth": "Authentifizierungsfehler. Überprüfe die Zugangsdaten oder Token-Berechtigungen.",
@@ -94,6 +113,7 @@
       "unknown": "Unerwarteter Fehler. Überprüfe die Home Assistant-Protokolle."
     },
     "abort": {
+      "scope_unavailable": "Keine freie CLUSTER-Zuordnung konnte erzeugt werden. Bitte erneut versuchen.",
       "no_nodes_visible": "No visible nodes were found. Check the account permissions and cluster configuration.",
       "already_configured": "Dieser Knoten ist bereits konfiguriert.",
       "no_data": "Keine Cluster-Daten empfangen. Überprüfe deine Konfiguration.",
@@ -678,7 +698,7 @@
       }
     }
   },
-  "selector": {"platform_type": {"options": {"PVE": "Proxmox VE", "PBS": "Proxmox Backup Server", "CLUSTER": "Proxmox-Cluster"}}, "cluster_scope_action": {"options": {"keep": "Beibehalten", "keep_associated": "Beibehalten — Zuordnung zum CLUSTER beibehalten: {name}", "independent": "Von CLUSTER trennen: {name}"}}},
+  "selector": {"platform_type": {"options": {"pve": "Proxmox VE", "pbs": "Proxmox Backup Server", "cluster": "Proxmox-Cluster"}}, "cluster_scope_action": {"options": {"keep": "Mit dem Cluster verbunden bleiben", "independent": "Unabhängig — keine Migration von VM/LXC-Entitäten zwischen Knoten"}}},
   "services": {
     "create_vzdump_backup": {
       "name": "Proxmox: Backup starten",
