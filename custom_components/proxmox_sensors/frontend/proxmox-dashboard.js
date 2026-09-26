@@ -177,6 +177,7 @@ function statusValue(ref, pill = false) {
 }
 // Standard state display metadata only; no hardware attribute discovery.
 const withUnit = ref => `${value(ref)}{% if is_number(${expression(ref)}) %} {{ (state_attr(${JSON.stringify(ref.entity_id)}, 'unit_of_measurement') or '') | e }}{% endif %}`;
+const hardwareName = ref => `{{ (state_attr(${JSON.stringify(ref.entity_id)}, 'friendly_name') or ${JSON.stringify(ref.entity_id)}) | e }}`;
 function pveMarkdown(title, content, refs = [], headingIcon = 'mdi:information-outline', dynamicCSS = '') {
   const heading = title ? `<header>${icon(headingIcon)}<h2>${title}</h2>${chevron}</header>` : '';
   return {type: 'markdown', content: title ? `<section>${heading}${content}</section>` : content,
@@ -369,13 +370,16 @@ const moreInfoRow = miniPanelLink;
 function buildDiagnosticsBlock(group) {
   const temperatures = new Set(blockRefs(group, 'temperatures').map(({ref}) => ref.entity_id)), seen = new Set();
   const items = blockRefs(group, 'diagnostics').filter(({resource, ref}) => {
-    if (!['sidecar', 'zfs', 'disks'].includes(ref.metric) || temperatures.has(ref.entity_id)) return false;
+    if (!['sidecar', 'zfs', 'disks', 'hardware'].includes(ref.metric) || temperatures.has(ref.entity_id)) return false;
     const key = `${ref.metric}:${resource.resource_id || ref.entity_id}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
   return rowsCard('Diagnostics', items.map(({resource, ref}) => {
+    if (ref.metric === 'hardware') {
+      return moreInfoRow(ref, `${icon('mdi:chip')}<span>${hardwareName(ref)}</span><span>${withUnit(ref)}</span>`);
+    }
     const title = ref.metric === 'sidecar' ? 'Sidecar' : ref.metric === 'zfs' ? `ZFS · ${logicalName(resource, 'zfs', 'Pool')}` : logicalName(resource, 'disks', 'Disk');
     return moreInfoRow(ref, `${icon(ref.metric === 'disks' ? 'mdi:harddisk' : ref.metric === 'zfs' ? 'mdi:database-check' : 'mdi:connection')}<span>${text(title)}</span><span>${ref.metric === 'disks' ? withUnit(ref) : statusValue(ref)}</span>`);
   }), items.map(item => item.ref), 'mdi:tools', MORE_INFO_ROW_CSS);
